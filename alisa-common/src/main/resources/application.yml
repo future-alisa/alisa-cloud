@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: alisa-common
+  config:
+    import:
+      - optional:file:./alisa-common/.env[.properties]
+  profiles:
+    active: dev
+jwt:
+  secret: ${JWT_SECRET}
