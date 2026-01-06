@@ -7,8 +7,10 @@ import java.util.Date;
 import java.util.Map;
 import java.util.function.Function;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
+import com.alisa.config.JwtProperties;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -18,11 +20,12 @@ import io.jsonwebtoken.security.Keys;
 
 @Component
 public class JwtUtil {
-    private static String SECRET = "";
+    private static String SECRET;
 
-    @Value("${jwt.secret}")
-    public void setSecret(String secret) {
-        JwtUtil.SECRET = secret;
+    @Autowired
+    public void setJwtProperties(JwtProperties jwtProperties) {
+        JwtUtil.SECRET = jwtProperties.getSecret();
+        System.out.println("JWT Secret 初始化成功: " + JwtUtil.SECRET);
     }
 
     public static String extractUsername(String token) {
