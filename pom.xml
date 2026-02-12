@@ -10,6 +10,7 @@
     <modules>
         <module>alisa-common</module>
         <module>alisa-gateway</module>
+        <module>alisa-notification</module>
     </modules>
     <name>alisa-cloud</name>
     <description>Alisa Cloud</description>
