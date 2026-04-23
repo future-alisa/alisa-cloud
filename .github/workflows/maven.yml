@@ -1,0 +1,32 @@
+name: Alisa Cloud Manual Build
+
+on:
+  workflow_dispatch: # 仅手动触发，方便你控制
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Maven Build & Install
+        shell: powershell
+        run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          Write-Host "=== 正在执行 Maven 全局安装 ==="
+          
+          # 1. 编译并安装所有模块（包含 common）本地的 .m2 仓库
+          mvn clean install -DskipTests
+          
+          
+      - name: Build Gateway Image
+        shell: powershell
+        run: |
+          Write-Host "=== 正在使用 Podman 构建网关镜像 ==="
+          
+          # 这里的 -f 路径指向你图片里看到的 docker/gateway.Dockerfile
+          podman build `
+            -t "alisa-gateway:latest" `
+            -f "docker/gateway.Dockerfile" `
+            .
