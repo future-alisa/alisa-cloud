@@ -1,4 +1,4 @@
-FROM openjdk:17-ea-17-jdk-slim
+FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY ./packages/alisa-gateway-*.jar /app/alisa-gateway.jar
 EXPOSE 8100
