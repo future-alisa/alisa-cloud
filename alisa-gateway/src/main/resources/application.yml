@@ -16,7 +16,7 @@ spring:
           # 强制只保留第一个跨域头，防止重复
           - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
         cors-configurations:
-          "[/**]":
+          "[/api/**]":
             allowedOriginPatterns: "*"
             allowedMethods: "*"
             allowedHeaders: "*"
@@ -44,5 +44,10 @@ spring:
           uri: lb://community-service
           predicates:
             - Path=/community/**
+        - id: chat-sockjs
+          uri: lb://transfer-service
+          predicates:
+            - Path=/ws/**
+
 jwt:
   secret: ${JWT_SECRET}

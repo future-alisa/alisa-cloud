@@ -28,14 +28,45 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // 从请求头中解析 token
-        String authHeader = request.getHeaders().getFirst("Authorization");
-        if (!StringUtils.hasText(authHeader) || !authHeader.startsWith("Bearer ")) {
+        String token = extractToken(request);
+        if (!StringUtils.hasText(token)) {
             return setUnauthorized(exchange);
         }
 
-        String token = authHeader.substring(7);
+        return processTokenAndForward(token, exchange, chain);
+    }
 
+    @Override
+    public int getOrder() {
+        return 0;
+    }
+
+    private boolean isExclude(String requestPath) {
+        final String[] excludePaths = {
+                "/api/v1/user/send",
+                "/api/v1/user/signin",
+                "/api/v1/user/signup",
+                "/api/v1/user/change-password",
+                "/api/v1/user/health",
+        };
+        AntPathMatcher antPathMatcher = new AntPathMatcher();
+
+        for (String string : excludePaths) {
+            if (antPathMatcher.match(string, requestPath)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private Mono<Void> setUnauthorized(ServerWebExchange exchange) {
+        var response = exchange.getResponse();
+        response.setStatusCode(HttpStatus.UNAUTHORIZED);
+        return response.setComplete();
+    }
+
+    private Mono<Void> processTokenAndForward(String token, ServerWebExchange exchange, GatewayFilterChain chain) {
         try {
             if (JwtUtil.isTokenExpired(token)) {
                 return setUnauthorized(exchange);
@@ -54,41 +85,33 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 String base64User = userContext.toBase64Json();
 
                 // 将结果塞入请求头传递
-                var newRequest = exchange.getRequest().mutate()
+                var newRequest = exchange.getRequest()
+                        .mutate()
                         .header("X-User-Header", base64User)
+                        .header("X-Authenticated", "true")
                         .build();
 
                 return chain.filter(exchange.mutate().request(newRequest).build());
             }
         } catch (Exception e) {
-            // 解析异常
+            e.printStackTrace();
         }
 
         return setUnauthorized(exchange);
     }
 
-    @Override
-    public int getOrder() {
-        return 0;
-    }
-
-    private boolean isExclude(String requestPath) {
-        final String[] excludePaths = { "/api/v1/user/send", "/api/v1/user/signin", "/api/v1/user/signup",
-                "/api/v1/user/change-password", "/api/v1/user/health" };
-        AntPathMatcher antPathMatcher = new AntPathMatcher();
-
-        for (String string : excludePaths) {
-            if (antPathMatcher.match(string, requestPath)) {
-                return true;
-            }
+    private String extractToken(org.springframework.http.server.reactive.ServerHttpRequest request) {
+        String authHeader = request.getHeaders().getFirst("Authorization");
+        if (StringUtils.hasText(authHeader)
+                && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
         }
 
-        return false;
-    }
+        String queryToken = request.getQueryParams().getFirst("token");
+        if (StringUtils.hasText(queryToken)) {
+            return queryToken;
+        }
 
-    private Mono<Void> setUnauthorized(ServerWebExchange exchange) {
-        var response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.UNAUTHORIZED);
-        return response.setComplete();
+        return null;
     }
 }

@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY ./packages/alisa-gateway-*.jar /app/alisa-gateway.jar
 EXPOSE 8100
