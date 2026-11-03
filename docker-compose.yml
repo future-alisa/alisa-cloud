@@ -8,9 +8,26 @@ services:
       - 8100:8100
     env_file:
       - ./alisa-gateway.env
+    environment:
+      SPRING_CONFIG_ADDITIONAL_LOCATION: optional:file:/app/config/routes.yml
+    volumes:
+      - ${ALISA_GATEWAY_ROUTES_FILE:-./gateway-routes.yml}:/app/config/routes.yml:ro
+    restart: always
+    networks:
+      - my_network
+
+  user:
+    image: ghcr.io/sunyuboalisa/alisa-user:latest
+    container_name: alisa-user
+    env_file:
+      - ./alisa-user.env
+    expose:
+      - "8084"
     restart: always
     networks:
       - my_network
 
 networks:
   my_network:
+    external: true
+    name: my_network

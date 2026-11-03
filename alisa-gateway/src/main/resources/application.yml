@@ -1,5 +1,5 @@
 server:
-  port: 8100
+  port: ${SERVER_PORT:8100}
 spring:
   application:
     name: gateway-service
@@ -7,51 +7,22 @@ spring:
     import:
       - optional:file:./alisa-gateway/.env[.properties]
   profiles:
-    active: dev
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   cloud:
     gateway:
-      # 网关全局跨域配置
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
       globalcors:
-        default-filters:
-          # 强制只保留第一个跨域头，防止重复
-          - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
         cors-configurations:
-          "[/api/**]":
+          "[/**]":
             allowedOriginPatterns: "*"
             allowedMethods: "*"
             allowedHeaders: "*"
-          "[/community/**]":
-            allowedOriginPatterns: "*"
-            allowedMethods: "*"
-            allowedHeaders: "*"
-            # allowCredentials: true
-        # 解决options请求被拦截的问题
         add-to-simple-url-handler-mapping: true
       routes:
-        - id: target-service
-          uri: lb://target-service
-          predicates:
-            - Path=/target-service/api/v1/**
-        - id: todo-service
-          uri: lb://todo-service
-          predicates:
-            - Path=/api/v1/todo/**
-        - id: trace-service
-          uri: lb://trace-service
-          predicates:
-            - Path=/api/v1/trace/**
         - id: user-service
           uri: lb://user-service
           predicates:
-            - Path=/api/v1/user/**
-        - id: community-service
-          uri: lb://community-service
-          predicates:
-            - Path=/community/**
-        - id: chat-sockjs
-          uri: lb://transfer-service
-          predicates:
-            - Path=/ws/**
-
+            - Path=/api/v1/user/**,/api/v1/authorization/**,/oauth2/**,/oauth/**,/login,/logout,/.well-known/**
 jwt:
   secret: ${JWT_SECRET}

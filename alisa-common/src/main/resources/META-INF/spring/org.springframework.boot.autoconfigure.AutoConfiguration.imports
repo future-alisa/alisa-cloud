@@ -1,3 +1,4 @@
 com.alisa.config.UserAutoConfiguration
 com.alisa.config.JwtProperties
 com.alisa.util.JwtUtil
+com.alisa.security.ResourceSecurityAutoConfiguration

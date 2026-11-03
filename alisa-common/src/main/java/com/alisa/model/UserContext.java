@@ -11,6 +11,8 @@ import lombok.Data;
 public class UserContext {
     private String userId;
     private String username;
+    private String tenantId = "";
+    private boolean application;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ThreadLocal<UserContext> THREAD_LOCAL = new ThreadLocal<>();
@@ -28,12 +30,12 @@ public class UserContext {
     }
 
     public String toBase64Json() {
-        // 1. 手动拼装 JSON (保持轻量，不依赖 Jackson)
-        String userIdStr = (this.userId == null) ? "" : this.userId;
-        String json = "{\"userId\":\"" + userIdStr + "\",\"username\":\"" + this.username + "\"}";
-
-        // 2. Base64 编码
-        return Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+        // 使用统一 JSON 序列化，正确处理用户名中的引号、反斜杠和 Unicode。
+        try {
+            return Base64.getEncoder().encodeToString(objectMapper.writeValueAsBytes(this));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("Cannot serialize user context", exception);
+        }
     }
 
     public static UserContext fromBase64Json(String base64User) {

@@ -1,0 +1,25 @@
+# Import this deployment-owned file into alisa-user, alongside its existing configuration.
+# OAuth tables and authorization tables must be installed first. Set issuer to the externally visible HTTPS origin.
+alisa:
+  oauth:
+    enabled: true
+    issuer: ${OAUTH_ISSUER}
+    applications:
+      smallokr:
+        "[smallokr:target:read]": 查看目标
+        "[smallokr:target:create]": 创建目标
+        "[smallokr:target:update]": 修改目标
+        "[smallokr:target:delete]": 删除目标
+        "[smallokr:result:read]": 查看阶段成果
+        "[smallokr:result:create]": 创建阶段成果
+        "[smallokr:result:update]": 修改阶段成果
+        "[smallokr:result:delete]": 删除阶段成果
+        "[smallokr:todo:read]": 查看待办和重复规则
+        "[smallokr:todo:create]": 创建待办
+        "[smallokr:todo:update]": 修改待办和重复规则
+        "[smallokr:todo:delete]": 删除待办
+  authorization:
+    enabled: true
+    applications:
+      smallokr: local
+    administrators: ${AUTHORIZATION_ADMINISTRATORS}

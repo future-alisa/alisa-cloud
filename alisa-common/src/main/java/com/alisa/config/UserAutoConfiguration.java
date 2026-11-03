@@ -16,9 +16,11 @@ public class UserAutoConfiguration {
     @Configuration
     @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     public static class MvcUserConfig implements WebMvcConfigurer {
+        private final org.springframework.beans.factory.ObjectProvider<com.alisa.security.ResourceAccess> access;
+        public MvcUserConfig(org.springframework.beans.factory.ObjectProvider<com.alisa.security.ResourceAccess> access) { this.access = access; }
         @Override
         public void addInterceptors(InterceptorRegistry registry) {
-            registry.addInterceptor(new UserInterceptor()).addPathPatterns("/**");
+            registry.addInterceptor(new UserInterceptor(access.getIfAvailable())).addPathPatterns("/**").excludePathPatterns("/error", "/actuator/health");
         }
     }
 
@@ -31,6 +33,11 @@ public class UserAutoConfiguration {
                 var user = UserContext.get();
                 if (user != null) {
                     template.header("X-User-Header", user.toBase64Json());
+                }
+                if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()
+                        instanceof org.springframework.web.context.request.ServletRequestAttributes attributes) {
+                    String token = attributes.getRequest().getHeader("Authorization");
+                    if (token != null) template.header("Authorization", token);
                 }
             };
         }

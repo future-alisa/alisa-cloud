@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alisa.user.mapper.ExternalIdentityMapper">
+    <select id="findUserId" resultType="java.lang.String">
+        SELECT user_id FROM tb_external_identity WHERE provider_id=#{providerId} AND issuer=#{issuer} AND subject_id=#{subject}
+    </select>
+    <insert id="insertLink">
+        INSERT INTO tb_external_identity(provider_id,issuer,subject_id,user_id)
+        VALUES (#{providerId},#{issuer},#{subject},#{userId})
+    </insert>
+    <select id="findByUserId" resultType="com.alisa.user.entity.ExternalIdentityLink">
+        SELECT provider_id AS providerId, issuer, subject_id AS subject, user_id AS userId
+        FROM tb_external_identity WHERE user_id=#{userId} ORDER BY provider_id,issuer,subject_id
+    </select>
+    <delete id="deleteOwned">
+        DELETE FROM tb_external_identity WHERE provider_id=#{providerId} AND issuer=#{issuer}
+            AND subject_id=#{subject} AND user_id=#{userId}
+    </delete>
+</mapper>

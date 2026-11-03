@@ -4,6 +4,7 @@ import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.util.StringUtils;
@@ -12,6 +13,7 @@ import org.springframework.web.server.ServerWebExchange;
 
 import com.alisa.model.UserContext;
 import com.alisa.util.JwtUtil;
+import com.alisa.config.AuthenticationProperties;
 
 import io.jsonwebtoken.Claims;
 import reactor.core.publisher.Mono;
@@ -19,17 +21,33 @@ import reactor.core.publisher.Mono;
 @CrossOrigin
 @Component
 public class AuthenticationFilter implements GlobalFilter, Ordered {
+    private final AuthenticationProperties properties;
+    public AuthenticationFilter(AuthenticationProperties properties) { this.properties = properties; }
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        // Identity headers are produced by this gateway, never accepted from callers.
+        var sanitized = exchange.getRequest().mutate().headers(headers -> {
+            headers.remove("X-User-Header");
+            headers.remove("X-Authenticated");
+        }).build();
+        exchange = exchange.mutate().request(sanitized).build();
         var request = exchange.getRequest();
 
         // 哪些路径不需要经过验证
-        if (isExclude(request.getPath().toString())) {
+        if (request.getMethod() == HttpMethod.OPTIONS || isExclude(request.getPath().toString())) {
             return chain.filter(exchange);
         }
 
         String token = extractToken(request);
         if (!StringUtils.hasText(token)) {
+            return setUnauthorized(exchange);
+        }
+
+        if(token.indexOf('.')<0) {
+            var route=exchange.<org.springframework.cloud.gateway.route.Route>getAttribute(org.springframework.cloud.gateway.support.ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+            // Only backends that independently validate bearer tokens may receive opaque credentials.
+            if(route!=null && Boolean.TRUE.equals(route.getMetadata().get("delegated-ready"))) return chain.filter(exchange);
             return setUnauthorized(exchange);
         }
 
@@ -42,16 +60,9 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     }
 
     private boolean isExclude(String requestPath) {
-        final String[] excludePaths = {
-                "/api/v1/user/send",
-                "/api/v1/user/signin",
-                "/api/v1/user/signup",
-                "/api/v1/user/change-password",
-                "/api/v1/user/health",
-        };
         AntPathMatcher antPathMatcher = new AntPathMatcher();
 
-        for (String string : excludePaths) {
+        for (String string : properties.getPublicPaths()) {
             if (antPathMatcher.match(string, requestPath)) {
                 return true;
             }
@@ -94,7 +105,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 return chain.filter(exchange.mutate().request(newRequest).build());
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            // Never log bearer credentials or JWT parse details.
         }
 
         return setUnauthorized(exchange);

@@ -1,0 +1,25 @@
+# Optional compatibility configuration; supplied by deployments, not loaded by the platform.
+# Set SPRING_CONFIG_ADDITIONAL_LOCATION=file:/path/to/routes.yml to enable.
+# Gateway route lists replace rather than merge, so user-service is included explicitly.
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates: ["Path=/api/v1/user/**,/api/v1/authorization/**,/oauth2/**,/oauth/**,/login,/logout,/.well-known/**"]
+        - id: target-service
+          uri: lb://target-service
+          predicates: [Path=/target-service/api/v1/**]
+        - id: todo-service
+          uri: lb://todo-service
+          predicates: [Path=/api/v1/todo/**]
+        - id: trace-service
+          uri: lb://trace-service
+          predicates: [Path=/api/v1/trace/**]
+        - id: community-service
+          uri: lb://community-service
+          predicates: [Path=/community/**]
+        - id: chat-sockjs
+          uri: lb://transfer-service
+          predicates: [Path=/ws/**]

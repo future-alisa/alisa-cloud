@@ -20,6 +20,10 @@ ifeq ($(SERVICE),alisa-gateway)
     MODULE = alisa-gateway
     DOCKER_NAME = alisa-gateway
 endif
+ifeq ($(SERVICE),alisa-user)
+    MODULE = alisa-user
+    DOCKER_NAME = alisa-user
+endif
 
 # 常量定义
 # 对应你的路径：docker/gateway.Dockerfile
@@ -34,7 +38,7 @@ endif
 IMAGE_TAG = latest
 
 # 定义所有子服务列表（用作批量处理）
-SERVICES = alisa-gateway 
+SERVICES = alisa-gateway alisa-user
 
 .PHONY: package-single build-only build clean-image push-image build-all push-all $(SERVICES)
 
@@ -68,17 +72,24 @@ $(SERVICES):
 # 一键并发构建所有服务（完美解决 Windows 上的进程调度 Bug）
 build-all:
 	@$(MAKE) -j 1 build-gateway
+	@$(MAKE) -j 1 build-user
 
 
 # 各个服务的内部快捷嵌套
 build-gateway:
 	@$(MAKE) build SERVICE=alisa-gateway
+build-user:
+	@$(MAKE) build SERVICE=alisa-user
 
 # ================= 🚢 生产部署一键推送 =================
 
 # 一键推送所有镜像到云端仓库
 push-all:
-	podman push $(REGISTRY)/$(COMPANY)/gateway:$(IMAGE_TAG)
+	@$(MAKE) push-image SERVICE=alisa-gateway
+	@$(MAKE) push-image SERVICE=alisa-user
+
+push-image:
+	podman push $(IMAGE_NAME):$(IMAGE_TAG)
 
 # 终极省心指令：一键完成「全量打包、全量构建、全量推送」
 release-all: build-all push-all

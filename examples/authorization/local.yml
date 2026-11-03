@@ -1,0 +1,9 @@
+# Apply the local authorization SQL manually before using this file.
+# Replace the administrator ID below; this file is never loaded automatically.
+alisa:
+  authorization:
+    enabled: true
+    applications:
+      my-project: local
+    administrators:
+      - replace-with-existing-platform-admin-user-id

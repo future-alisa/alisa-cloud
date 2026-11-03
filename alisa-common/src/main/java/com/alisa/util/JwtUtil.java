@@ -25,7 +25,6 @@ public class JwtUtil {
     @Autowired
     public void setJwtProperties(JwtProperties jwtProperties) {
         JwtUtil.SECRET = jwtProperties.getSecret();
-        System.out.println("JWT Secret 初始化成功: " + JwtUtil.SECRET);
     }
 
     public static String extractUsername(String token) {

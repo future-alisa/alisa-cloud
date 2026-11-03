@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.alisa.user.mapper.UserMapper">
+    <sql id="common">
+        user_id as id,
+        user_name as username,
+        user_password as password,
+        user_email as email
+    </sql>
+    <select id="findUserByID" resultType="com.alisa.user.entity.User">
+        select <include refid="common"/> from tb_user where user_id = #{id}
+    </select>
+    <select id="findUserByName" resultType="com.alisa.user.entity.User">
+        select <include refid="common"/> from tb_user where user_name = #{name}
+    </select>
+    <select id="findUserByEmail" resultType="com.alisa.user.entity.User">
+        select <include refid="common"/> from tb_user where user_email = #{email}
+    </select>
+    <insert id="saveUser" parameterType="com.alisa.user.entity.User">
+        INSERT INTO tb_user(user_id, user_name, user_password,user_email) 
+        VALUES (#{id}, #{username}, #{password},#{email})
+        ON DUPLICATE KEY UPDATE 
+        user_name = VALUES(user_name), 
+        user_password = VALUES(user_password),
+        user_email = VALUES(user_email)
+    </insert>
+    <update id="updatePasswordIfMatches">
+        UPDATE tb_user SET user_password = #{password}
+        WHERE user_id = #{id} AND user_password = #{previous}
+    </update>
+</mapper>

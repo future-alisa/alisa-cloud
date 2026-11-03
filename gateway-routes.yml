@@ -1,0 +1,9 @@
+# Platform-only routes. Business projects provide their own complete routes file.
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/user/**,/api/v1/authorization/**

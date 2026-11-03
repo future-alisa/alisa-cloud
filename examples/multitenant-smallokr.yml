@@ -1,0 +1,10 @@
+# Import after oauth-smallokr.yml (which declares the business-owned scope catalog).
+spring:
+  config:
+    import: ./oauth-smallokr.yml
+alisa:
+  tenancy:
+    enabled: true
+  authorization:
+    applications:
+      smallokr: tenant

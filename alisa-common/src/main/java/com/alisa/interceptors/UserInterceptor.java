@@ -7,10 +7,27 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 public class UserInterceptor implements HandlerInterceptor {
+    private final com.alisa.security.ResourceAccess access;
+    public UserInterceptor() { this(null); }
+    public UserInterceptor(com.alisa.security.ResourceAccess access) { this.access = access; }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
+        UserContext.remove();
+        if (access != null) {
+            try {
+                var identity = access.authenticate(request);
+                UserContext user = new UserContext();
+                user.setUserId(identity.application()?"app:"+identity.clientId():identity.userId()); user.setUsername(identity.username());
+                user.setTenantId(identity.tenantId());user.setApplication(identity.application());
+                UserContext.set(user);
+                return true;
+            } catch (com.alisa.security.AccessFailure exception) {
+                response.sendError(exception.status(), exception.getMessage());
+                return false;
+            }
+        }
         // 1. 从 Header 拿到网关传过来的加密串
         String base64User = request.getHeader("X-User-Header");
 
