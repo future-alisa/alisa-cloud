@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: alisa-infra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alisa-nacos
+  namespace: alisa-infra
+data:
+  NACOS_SERVER_ADDR: nacos-service.traefik.svc:8848
+  NACOS_NAMESPACE: 133db13a-a95c-4bbc-9043-86ddbba5e3ef
+  NACOS_USERNAME: ""
+  NACOS_PASSWORD: ""
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alisa-gateway
+  namespace: alisa-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alisa-gateway
+  template:
+    metadata:
+      labels:
+        app: alisa-gateway
+    spec:
+      imagePullSecrets:
+        - name: alisa-registry
+      containers:
+        - name: alisa-gateway
+          image: alisa-registry.cpolar.top/alisa-gateway:20261106-1
+          ports:
+            - name: http
+              containerPort: 8100
+          envFrom:
+            - configMapRef:
+                name: alisa-nacos
+            - secretRef:
+                name: alisa-jwt
+          readinessProbe:
+            tcpSocket:
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alisa-gateway
+  namespace: alisa-infra
+spec:
+  selector:
+    app: alisa-gateway
+  ports:
+    - name: http
+      port: 8100
+      targetPort: http
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alisa-user
+  namespace: alisa-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alisa-user
+  template:
+    metadata:
+      labels:
+        app: alisa-user
+    spec:
+      imagePullSecrets:
+        - name: alisa-registry
+      containers:
+        - name: alisa-user
+          image: alisa-registry.cpolar.top/alisa-user:20261106-1
+          ports:
+            - name: http
+              containerPort: 8084
+          envFrom:
+            - configMapRef:
+                name: alisa-nacos
+            - secretRef:
+                name: alisa-jwt
+            - secretRef:
+                name: alisa-user-db
+          readinessProbe:
+            httpGet:
+              path: /api/v1/user/health
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alisa-user
+  namespace: alisa-infra
+spec:
+  selector:
+    app: alisa-user
+  ports:
+    - name: http
+      port: 8084
+      targetPort: http
