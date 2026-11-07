@@ -34,7 +34,7 @@ spec:
         - name: alisa-registry
       containers:
         - name: alisa-gateway
-          image: alisa-registry.cpolar.top/alisa-gateway:nacos-fc3cf8b23ead
+          image: alisa-registry.cpolar.top/alisa-gateway:nacos-a9820abfc060
           env:
             - name: GATEWAY_NACOS_ROUTES_ENABLED
               value: "true"

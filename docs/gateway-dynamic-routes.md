@@ -43,3 +43,5 @@
 `alisa-infra` 应用跟踪 `codex/alisa-infra-argocd` 分支的 `deploy/kubernetes/alisa-infra*.yaml`。执行完整同步时，PreSync Job 先拉取固定源码提交并运行 Maven 测试及打包，再使用集群已有的 `alisa-registry` Secret 推送带源码版本标签的网关镜像。下一阶段 Job 使用相同镜像，通过 Nacos Java SDK 初始化路由；已有非空配置不会被覆盖。随后才更新网关 Deployment。
 
 构建任务不依赖 SSH 或 GitHub Runner；需要集群能够访问 GitHub、Maven Central 和容器镜像源。构建或 Nacos 初始化失败会阻止进入 Deployment 更新阶段。后续镜像发布需同步更新构建任务的 `SOURCE_REVISION`、目标镜像标签和网关 Deployment 镜像。日常业务路由调整只在 Nacos 发布即可，无需触发此构建任务。
+
+现有集群的构建 Pod 使用外部 DNS；运行时基础层取自已有私有 Registry 网关镜像。`alisa-gateway-build-cache` 保留源码工作区及 Maven 缓存以供重试复用，需要集群默认 StorageClass 提供 2 GiB 的 ReadWriteOnce 卷。Job 最长等待一小时。

@@ -1,4 +1,20 @@
-# Argo CD PreSync hooks: build and publish before updating the gateway.
+# Private-registry runtime base and persistent build workspace/cache.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alisa-gateway-build-cache
+  namespace: alisa-infra
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: '-20'
+    argocd.argoproj.io/hook-delete-policy: HookFailed
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -6,70 +22,82 @@ metadata:
   namespace: alisa-infra
   annotations:
     argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/sync-wave: "-20"
+    argocd.argoproj.io/sync-wave: '-20'
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 1800
+  activeDeadlineSeconds: 3600
   template:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       dnsPolicy: None
       dnsConfig:
-        nameservers: ["223.5.5.5", "1.1.1.1"]
+        nameservers:
+        - 223.5.5.5
+        - 1.1.1.1
       initContainers:
-        - name: source
-          image: alpine/git:2.47.2
-          command: [sh, -ec]
-          args:
-            - |
-              nslookup github.com
-              git clone --depth=1 --branch codex/alisa-infra-argocd https://github.com/future-alisa/alisa-cloud.git /workspace/source
-              cd /workspace/source
-              git fetch --depth=1 origin "$SOURCE_REVISION"
-              git checkout --detach "$SOURCE_REVISION"
-          env:
-            - name: SOURCE_REVISION
-              value: fc3cf8b23eadd70b6659fbe2d92dde15bce175e4
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-        - name: package
-          image: maven:3.9.9-eclipse-temurin-17
-          workingDir: /workspace/source
-          command: [mvn]
-          args: ["-B", "-pl", "alisa-gateway", "-am", "package"]
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-            - name: maven-cache
-              mountPath: /root/.m2
-      containers:
-        - name: publish-image
-          image: gcr.io/kaniko-project/executor:v1.23.2
-          args:
-            - --context=dir:///workspace/source
-            - --dockerfile=docker/alisa-gateway.Dockerfile
-            - --destination=alisa-registry.cpolar.top/alisa-gateway:nacos-fc3cf8b23ead
-            - --push-retry=3
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-            - name: registry
-              mountPath: /kaniko/.docker
-              readOnly: true
-      volumes:
+      - name: source
+        image: alpine/git:2.47.2
+        command:
+        - sh
+        - -ec
+        args:
+        - "mkdir -p /workspace/maven\nif [ ! -d /workspace/source/.git ]; then\n \
+          \ git clone --depth=1 --branch codex/alisa-infra-argocd https://github.com/future-alisa/alisa-cloud.git\
+          \ /workspace/source\nfi\ncd /workspace/source\ngit fetch --depth=1 origin\
+          \ \"$SOURCE_REVISION\"\ngit checkout --detach \"$SOURCE_REVISION\"\n"
+        env:
+        - name: SOURCE_REVISION
+          value: a9820abfc0605c08d893aa81e451a6a107bc6e76
+        volumeMounts:
         - name: workspace
-          emptyDir: {}
+          mountPath: /workspace
+      - name: package
+        image: maven:3.9.9-eclipse-temurin-17
+        workingDir: /workspace/source
+        command:
+        - mvn
+        args:
+        - -B
+        - -pl
+        - alisa-gateway
+        - -am
+        - package
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
         - name: maven-cache
-          emptyDir: {}
+          mountPath: /root/.m2
+          subPath: maven
+      containers:
+      - name: publish-image
+        image: gcr.io/kaniko-project/executor:v1.23.2
+        args:
+        - --context=dir:///workspace/source
+        - --dockerfile=docker/alisa-gateway.Dockerfile
+        - --destination=alisa-registry.cpolar.top/alisa-gateway:nacos-a9820abfc060
+        - --push-retry=3
+        - --build-arg=GATEWAY_BASE_IMAGE=alisa-registry.cpolar.top/alisa-gateway:20261106-1
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
         - name: registry
-          secret:
-            secretName: alisa-registry
-            items:
-              - key: .dockerconfigjson
-                path: config.json
+          mountPath: /kaniko/.docker
+          readOnly: true
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: alisa-gateway-build-cache
+      - name: maven-cache
+        persistentVolumeClaim:
+          claimName: alisa-gateway-build-cache
+      - name: registry
+        secret:
+          secretName: alisa-registry
+          items:
+          - key: .dockerconfigjson
+            path: config.json
 ---
 apiVersion: batch/v1
 kind: Job
@@ -78,7 +106,7 @@ metadata:
   namespace: alisa-infra
   annotations:
     argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/sync-wave: "-10"
+    argocd.argoproj.io/sync-wave: '-10'
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 0
@@ -88,17 +116,18 @@ spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       imagePullSecrets:
-        - name: alisa-registry
+      - name: alisa-registry
       containers:
-        - name: publish-routes
-          image: alisa-registry.cpolar.top/alisa-gateway:nacos-fc3cf8b23ead
-          command: [java]
-          args:
-            - -Dloader.main=com.alisa.routes.NacosRoutePublisher
-            - -cp
-            - /app/alisa-gateway.jar
-            - org.springframework.boot.loader.PropertiesLauncher
-            - /app/nacos-routes.yaml
-          envFrom:
-            - configMapRef:
-                name: alisa-nacos
+      - name: publish-routes
+        image: alisa-registry.cpolar.top/alisa-gateway:nacos-a9820abfc060
+        command:
+        - java
+        args:
+        - -Dloader.main=com.alisa.routes.NacosRoutePublisher
+        - -cp
+        - /app/alisa-gateway.jar
+        - org.springframework.boot.loader.PropertiesLauncher
+        - /app/nacos-routes.yaml
+        envFrom:
+        - configMapRef:
+            name: alisa-nacos
