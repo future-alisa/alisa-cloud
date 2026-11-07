@@ -15,12 +15,16 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: ["223.5.5.5", "1.1.1.1"]
       initContainers:
         - name: source
           image: alpine/git:2.47.2
           command: [sh, -ec]
           args:
             - |
+              nslookup github.com
               git clone --depth=1 --branch codex/alisa-infra-argocd https://github.com/future-alisa/alisa-cloud.git /workspace/source
               cd /workspace/source
               git fetch --depth=1 origin "$SOURCE_REVISION"
