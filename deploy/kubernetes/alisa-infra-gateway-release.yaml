@@ -43,10 +43,15 @@ spec:
         - sh
         - -ec
         args:
-        - "mkdir -p /workspace/maven\nif [ ! -d /workspace/source/.git ]; then\n \
-          \ git clone --depth=1 --branch codex/alisa-infra-argocd https://github.com/future-alisa/alisa-cloud.git\
-          \ /workspace/source\nfi\ncd /workspace/source\ngit fetch --depth=1 origin\
-          \ \"$SOURCE_REVISION\"\ngit checkout --detach \"$SOURCE_REVISION\"\n"
+        - 'wget -T 60 -t 3 -O /tmp/source.tar.gz "https://codeload.github.com/future-alisa/alisa-cloud/tar.gz/$SOURCE_REVISION"
+
+          rm -rf /workspace/source
+
+          mkdir -p /workspace/source /workspace/maven
+
+          tar -xzf /tmp/source.tar.gz -C /workspace/source --strip-components=1
+
+          '
         env:
         - name: SOURCE_REVISION
           value: a9820abfc0605c08d893aa81e451a6a107bc6e76
@@ -63,6 +68,7 @@ spec:
         - -pl
         - alisa-gateway
         - -am
+        - clean
         - package
         volumeMounts:
         - name: workspace
