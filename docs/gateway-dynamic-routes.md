@@ -48,4 +48,6 @@
 
 初始化 Job 最长等待 30 分钟，以覆盖首次镜像拉取时间。本次构建产物已发布到 `alisa-registry.cpolar.top/alisa-gateway:nacos-a9820abfc060`，镜像摘要为 `sha256:d8eff6fa03f84953cc01bcda5e5c294e8c886b0292720309eb204ec4a92dac0b`。
 
-本次 repo-server 直接访问 GitHub 曾出现域名解析/连接超时，因此使用 Argo CD 官方本地清单同步接口提交与 Git 一致的已提交清单；构建任务通过 GitHub 官方固定提交归档获取源码。后续常规 Git 同步仍需确保 repo-server 能访问 GitHub。
+首次部署时 repo-server 访问 GitHub 曾出现域名解析/连接超时，临时使用 Argo CD 官方本地清单同步接口完成发布。后续检查已验证正常 Git 分支解析和同步预演成功，并通过正常 Git 同步补齐资源跟踪注解；当前不再依赖本地清单同步。构建任务继续通过 GitHub 官方固定提交归档获取源码。
+
+仅更新已有 Deployment、Service、ConfigMap、Namespace 或 HTTPRoute 时，可选择这些资源进行同步，跳过 PreSync 构建和初始化 Hook。完整同步会执行发布流程；日常业务路由调整直接在 Nacos 发布。
