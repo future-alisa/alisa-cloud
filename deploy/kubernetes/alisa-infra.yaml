@@ -34,7 +34,7 @@ spec:
         - name: alisa-registry
       containers:
         - name: alisa-gateway
-          image: alisa-registry.cpolar.top/alisa-gateway:20261106-1
+          image: registry.kind.internal:5000/alisa-gateway:20261106-1
           ports:
             - name: http
               containerPort: 8100
@@ -80,7 +80,7 @@ spec:
         - name: alisa-registry
       containers:
         - name: alisa-user
-          image: alisa-registry.cpolar.top/alisa-user:20261106-1
+          image: registry.kind.internal:5000/alisa-user:20261106-1
           ports:
             - name: http
               containerPort: 8084
