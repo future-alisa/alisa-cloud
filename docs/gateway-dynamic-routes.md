@@ -1,0 +1,39 @@
+# Nacos 动态网关路由
+
+网关保留公共账号路由；SmallOKR、ScienceCommunity 的业务路由由一份 Nacos 配置维护。服务实例仍通过 Nacos Discovery 发现，路由发布后无需重新构建或重启网关。
+
+## 首次接入
+
+1. 在现有 Nacos 控制台选择与网关 `NACOS_NAMESPACE` 相同的命名空间（这里填写 namespace ID；public 通常留空）。创建配置：Data ID 为 `alisa-gateway-routes.yaml`，Group 为 `ALISA_GATEWAY`，格式 YAML。
+2. 将 [完整业务路由示例](../examples/gateway/nacos-routes.yaml) 的内容发布到该配置。它包含 SmallOKR 三个服务，以及 ScienceCommunity 的社区、用户转发 API、WebSocket 和 SockJS 路由。无需添加公共 `user-service`。
+3. 网关运行环境增加 `GATEWAY_NACOS_ROUTES_ENABLED=true`。继续使用原有 `NACOS_SERVER_ADDR`、`NACOS_NAMESPACE`、`NACOS_USERNAME`、`NACOS_PASSWORD`；账号需具备该配置的读取权限。
+4. 构建并部署更新后的网关。Docker Compose 使用根目录的 `alisa-gateway.env`；IDE/本地 JAR 使用环境变量或 `alisa-gateway/.env`。首次需要重启网关以启用订阅。
+
+可用 `GATEWAY_NACOS_ROUTES_DATA_ID` 和 `GATEWAY_NACOS_ROUTES_GROUP` 覆盖默认配置标识，隔离开发、测试和生产。
+
+启用动态路由时，取消原来指向 SmallOKR 或 legacy 路由文件的 `ALISA_GATEWAY_ROUTES_FILE` / `SPRING_CONFIG_ADDITIONAL_LOCATION` 配置。Compose 默认挂载的根目录 `gateway-routes.yml` 仅含账号路由，可以保留。不要在本地和 Nacos 重复定义相同业务路由 ID，否则远程配置会被拒绝。
+
+## 日常发布
+
+直接在 Nacos 修改并发布同一份 YAML。所有订阅该 namespace/group/data ID 的网关实例分别接收更新。日志 `Loaded N business routes from Nacos ...` 表示该实例已应用；各实例更新有传播延迟，不提供跨实例同时切换的事务。
+
+更新是一份业务路由列表的完整替换：删除列表项会移除该路由。显式发布 `spring.cloud.gateway.routes: []` 可以清空全部动态业务路由，公共账号路由仍保留。不要删除整个配置来清空路由。
+
+网关先解析、检查重复 ID 并编译全部谓词和过滤器，成功后替换快照并刷新 Gateway 缓存。空配置、格式错误、未知谓词/过滤器或重复 ID 会拒绝更新，保留当前进程上一份有效快照并记录错误。启动时无法取得有效配置则启动失败，避免只启动账号路由却误以为业务已接入。Nacos SDK 自身的本地缓存行为仍适用；进程内上一份快照不是独立持久化备份。
+
+回滚在 Nacos 配置历史中恢复上一个有效版本并发布即可。配置可用不代表后端健康，请在发布后验证实际接口和服务注册情况。
+
+## 路径与鉴权
+
+- `/target-service/api/v1/**`、`/api/v1/todo/**`、`/api/v1/trace/**` 保持 SmallOKR 现有路径。
+- `/community/**` 保留完整前缀，匹配 community-service 的 `/community` servlet context。
+- `/api/users/**` 转发给 transfer-service。
+- `/ws/**` 的 Upgrade 请求通过 `lb:ws://transfer-service`，其余 SockJS HTTP 请求通过 `lb://transfer-service`。
+- 公共账号和 OAuth 路由、CORS、全局鉴权继续由本地网关配置负责；Nacos 仅用于业务路由。
+- SmallOKR 示例沿用项目原有 `delegated-ready: true`；仅应在后端已具备独立 Bearer 校验时启用。ScienceCommunity 示例不增加该标记，也不扩大匿名白名单。WebSocket 仍受现有网关鉴权约束，transfer-service 的 STOMP 身份处理不由本次路由配置修改。
+
+## 验证
+
+执行 `bash mvnw -pl alisa-gateway -am test`。测试覆盖完整示例编译、错误更新保留旧路由、更新和清空业务路由、公共路由 ID 冲突、初始配置缺失以及监听释放。不依赖实际 Nacos。
+
+接入真实环境后，确认日志和各业务接口可达，再在 Nacos 发布一次可回滚的路由修改，检查所有网关实例均收到更新。本次代码整理不会自动发布 Nacos 配置或重启运行中的网关。

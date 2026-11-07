@@ -26,3 +26,11 @@ spring:
             - Path=/api/v1/user/**,/api/v1/authorization/**,/oauth2/**,/oauth/**,/login,/logout,/.well-known/**
 jwt:
   secret: ${JWT_SECRET}
+
+alisa:
+  gateway:
+    routes:
+      nacos:
+        enabled: ${GATEWAY_NACOS_ROUTES_ENABLED:false}
+        data-id: ${GATEWAY_NACOS_ROUTES_DATA_ID:alisa-gateway-routes.yaml}
+        group: ${GATEWAY_NACOS_ROUTES_GROUP:ALISA_GATEWAY}

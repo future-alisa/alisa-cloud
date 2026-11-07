@@ -1,0 +1,36 @@
+# Data ID: alisa-gateway-routes.yaml, Group: ALISA_GATEWAY
+# Business routes only. Public account routes remain in the gateway application.
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: target-service
+          uri: lb://target-service
+          metadata:
+            delegated-ready: true
+          predicates: [Path=/target-service/api/v1/**]
+        - id: todo-service
+          uri: lb://todo-service
+          metadata:
+            delegated-ready: true
+          predicates: [Path=/api/v1/todo/**]
+        - id: trace-service
+          uri: lb://trace-service
+          metadata:
+            delegated-ready: true
+          predicates: [Path=/api/v1/trace/**]
+        - id: community-service
+          uri: lb://community-service
+          predicates: [Path=/community/**]
+        - id: transfer-api
+          uri: lb://transfer-service
+          predicates: [Path=/api/users/**]
+        - id: chat-websocket
+          order: -1
+          uri: lb:ws://transfer-service
+          predicates:
+            - Path=/ws/**
+            - Header=Upgrade, (?i)websocket
+        - id: chat-sockjs
+          uri: lb://transfer-service
+          predicates: [Path=/ws/**]

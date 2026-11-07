@@ -19,7 +19,7 @@
 复制 alisa-user/example.env 为 alisa-user/.env，填写现有基础设施配置和与网关一致的 JWT_SECRET。
 在仓库根目录运行 mvn clean install，再执行 java -jar packages/alisa-user-0.0.1-SNAPSHOT.jar。
 
-网关默认仅包含公共账号路由；接入现有项目时配置完整路由文件。详见 [用户服务迁移与项目接入](docs/user-service-migration.md)。
+网关默认仅包含公共账号路由；推荐通过 [Nacos 动态路由](docs/gateway-dynamic-routes.md) 同时接入 SmallOKR、ScienceCommunity，发布配置即可热更新。也可继续使用完整静态路由文件。详见 [用户服务迁移与项目接入](docs/user-service-migration.md)。
 
 - 向导  
   git clone https://github.com/future-alisa/alisa-cloud.git

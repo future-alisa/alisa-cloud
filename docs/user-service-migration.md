@@ -56,6 +56,8 @@ SmallOKR 的目标、阶段成果、待办和行为记录仍归 SmallOKR。项�
 
 ## 网关业务路由
 
+推荐使用 [Nacos 动态路由](gateway-dynamic-routes.md)，统一维护多个项目的业务路由并热更新。以下静态文件方式继续兼容；启用 Nacos 时不要重复加载静态业务路由。
+
 公共网关的默认 application.yml / gateway-routes.yml 只配置 user-service。SmallOKR 使用自己仓库的 smallokr_server/gateway-routes.yml，其他项目也提供自己的完整路由列表。
 
 独立启动网关时设置 SPRING_CONFIG_ADDITIONAL_LOCATION=file:/绝对路径/routes.yml；Compose 通过 ALISA_GATEWAY_ROUTES_FILE 选择宿主机文件并挂载到 /app/config/routes.yml，默认使用公共 gateway-routes.yml。例如在 alisa-cloud 根目录设置 ALISA_GATEWAY_ROUTES_FILE=../SmallOKR/smallokr_server/gateway-routes.yml 即可接入 SmallOKR。Spring 的路由列表覆盖而非追加，接入文件必须包含 user-service 路由。
