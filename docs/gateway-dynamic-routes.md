@@ -45,3 +45,7 @@
 构建任务不依赖 SSH 或 GitHub Runner；需要集群能够访问 GitHub、Maven Central 和容器镜像源。构建或 Nacos 初始化失败会阻止进入 Deployment 更新阶段。后续镜像发布需同步更新构建任务的 `SOURCE_REVISION`、目标镜像标签和网关 Deployment 镜像。日常业务路由调整只在 Nacos 发布即可，无需触发此构建任务。
 
 现有集群的构建 Pod 使用外部 DNS；运行时基础层取自已有私有 Registry 网关镜像。`alisa-gateway-build-cache` 保留源码工作区及 Maven 缓存以供重试复用，需要集群默认 StorageClass 提供 2 GiB 的 ReadWriteOnce 卷。Job 最长等待一小时。
+
+初始化 Job 最长等待 30 分钟，以覆盖首次镜像拉取时间。本次构建产物已发布到 `alisa-registry.cpolar.top/alisa-gateway:nacos-a9820abfc060`，镜像摘要为 `sha256:d8eff6fa03f84953cc01bcda5e5c294e8c886b0292720309eb204ec4a92dac0b`。
+
+本次 repo-server 直接访问 GitHub 曾出现域名解析/连接超时，因此使用 Argo CD 官方本地清单同步接口提交与 Git 一致的已提交清单；构建任务通过 GitHub 官方固定提交归档获取源码。后续常规 Git 同步仍需确保 repo-server 能访问 GitHub。
