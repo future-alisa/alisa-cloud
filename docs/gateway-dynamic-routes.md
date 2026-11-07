@@ -37,3 +37,9 @@
 执行 `bash mvnw -pl alisa-gateway -am test`。测试覆盖完整示例编译、错误更新保留旧路由、更新和清空业务路由、公共路由 ID 冲突、初始配置缺失以及监听释放。不依赖实际 Nacos。
 
 接入真实环境后，确认日志和各业务接口可达，再在 Nacos 发布一次可回滚的路由修改，检查所有网关实例均收到更新。本次代码整理不会自动发布 Nacos 配置或重启运行中的网关。
+
+## 现有 Argo CD 部署
+
+`alisa-infra` 应用跟踪 `codex/alisa-infra-argocd` 分支的 `deploy/kubernetes/alisa-infra*.yaml`。执行完整同步时，PreSync Job 先拉取固定源码提交并运行 Maven 测试及打包，再使用集群已有的 `alisa-registry` Secret 推送带源码版本标签的网关镜像。下一阶段 Job 使用相同镜像，通过 Nacos Java SDK 初始化路由；已有非空配置不会被覆盖。随后才更新网关 Deployment。
+
+构建任务不依赖 SSH 或 GitHub Runner；需要集群能够访问 GitHub、Maven Central 和容器镜像源。构建或 Nacos 初始化失败会阻止进入 Deployment 更新阶段。后续镜像发布需同步更新构建任务的 `SOURCE_REVISION`、目标镜像标签和网关 Deployment 镜像。日常业务路由调整只在 Nacos 发布即可，无需触发此构建任务。
