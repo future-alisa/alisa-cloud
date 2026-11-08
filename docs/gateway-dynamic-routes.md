@@ -40,7 +40,7 @@
 
 ## 现有 Argo CD 部署
 
-`alisa-infra` 应用跟踪 `codex/alisa-infra-argocd` 分支的 `deploy/kubernetes/alisa-infra*.yaml`。执行完整同步时，PreSync Job 先拉取固定源码提交并运行 Maven 测试及打包，再使用集群已有的 `alisa-registry` Secret 推送带源码版本标签的网关镜像。下一阶段 Job 使用相同镜像，通过 Nacos Java SDK 初始化路由；已有非空配置不会被覆盖。随后才更新网关 Deployment。
+`alisa-infra` 应用跟踪 `main` 分支的 `deploy/kubernetes/alisa-infra*.yaml`。执行完整同步时，PreSync Job 先拉取固定源码提交并运行 Maven 测试及打包，再使用集群已有的 `alisa-registry` Secret 推送带源码版本标签的网关镜像。下一阶段 Job 使用相同镜像，通过 Nacos Java SDK 初始化路由；已有非空配置不会被覆盖。随后才更新网关 Deployment。
 
 构建任务不依赖 SSH 或 GitHub Runner；需要集群能够访问 GitHub、Maven Central 和容器镜像源。构建或 Nacos 初始化失败会阻止进入 Deployment 更新阶段。后续镜像发布需同步更新构建任务的 `SOURCE_REVISION`、目标镜像标签和网关 Deployment 镜像。日常业务路由调整只在 Nacos 发布即可，无需触发此构建任务。
 
@@ -51,3 +51,7 @@
 首次部署时 repo-server 访问 GitHub 曾出现域名解析/连接超时，临时使用 Argo CD 官方本地清单同步接口完成发布。后续检查已验证正常 Git 分支解析和同步预演成功，并通过正常 Git 同步补齐资源跟踪注解；当前不再依赖本地清单同步。构建任务继续通过 GitHub 官方固定提交归档获取源码。
 
 仅更新已有 Deployment、Service、ConfigMap、Namespace 或 HTTPRoute 时，可选择这些资源进行同步，跳过 PreSync 构建和初始化 Hook。完整同步会执行发布流程；日常业务路由调整直接在 Nacos 发布。
+
+## 分支维护
+
+部署改动已整合到主分支，`alisa-infra` 统一跟踪 `main`。Application 定义位于 `deploy/argocd/alisa-infra.yaml`，同步范围仍为 `deploy/kubernetes/alisa-infra*.yaml`。仅调整跟踪分支且清单内容相同时，刷新并核对 Synced / Healthy 即可，无需为了切分支重新执行镜像构建 Hook。

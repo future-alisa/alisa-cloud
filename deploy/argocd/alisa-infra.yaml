@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alisa-infra
+  namespace: argocd
+spec:
+  source:
+    repoURL: https://github.com/future-alisa/alisa-cloud.git
+    path: deploy/kubernetes
+    targetRevision: main
+    directory:
+      include: alisa-infra*.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: alisa-infra
+  project: default
