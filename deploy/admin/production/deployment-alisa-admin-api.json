@@ -41,7 +41,7 @@
         "containers": [
           {
             "name": "api",
-            "image": "registry.kind.internal:5000/alisa-admin-api@sha256:c7122a47251e88dc362b730f7c4b42ebb53a981a798818b4824078dd37cfef6c",
+            "image": "registry.kind.internal:5000/alisa-admin-api@sha256:e300ad46957f1b1b5084b8a5c0553bff5aff34c918baa602d95f4870cb1c9212",
             "ports": [
               {
                 "name": "http",
@@ -109,6 +109,12 @@
               {
                 "secretRef": {
                   "name": "alisa-user-db"
+                }
+              },
+              {
+                "secretRef": {
+                  "name": "alisa-admin-account-delivery",
+                  "optional": true
                 }
               }
             ],

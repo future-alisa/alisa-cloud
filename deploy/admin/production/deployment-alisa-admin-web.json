@@ -41,7 +41,7 @@
         "containers": [
           {
             "name": "web",
-            "image": "registry.kind.internal:5000/alisa-admin-web@sha256:dababd2ccdadf3bd4007aa19a8c8a41013e1a5dc77d28cb0ed6064180a9ebd7c",
+            "image": "registry.kind.internal:5000/alisa-admin-web@sha256:d5923b52e4117a303b05531a30dc21cc5b551b121bcb9642f1cbf58256d39f80",
             "ports": [
               {
                 "name": "http",
