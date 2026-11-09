@@ -7,6 +7,7 @@ export interface Tenant {
 }
 export interface Member {
   userId: string;
+  username?: string | null;
   role: Role;
 }
 export interface Invitation {

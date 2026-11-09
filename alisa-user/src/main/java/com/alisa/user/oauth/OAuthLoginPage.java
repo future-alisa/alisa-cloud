@@ -12,6 +12,8 @@ import org.springframework.web.util.HtmlUtils;
 @RestController
 @ConditionalOnProperty(prefix="alisa.oauth",name="enabled",havingValue="true")
 public class OAuthLoginPage {
+    @org.springframework.beans.factory.annotation.Value("${alisa.oauth.password-reset-url:/admin/reset-password}")
+    private String passwordResetUrl;
     @GetMapping("/login")
     public ResponseEntity<String> login(HttpServletRequest request) {
         var csrf=(CsrfToken)request.getAttribute(CsrfToken.class.getName());
@@ -28,7 +30,7 @@ public class OAuthLoginPage {
             "<input type='hidden' name='"+HtmlUtils.htmlEscape(csrf.getParameterName())+"' value='"+HtmlUtils.htmlEscape(csrf.getToken())+"'>"+
             "<label for='username'>用户名</label><input id='username' name='username' autocomplete='username' placeholder='输入 Alisa 用户名' required autofocus maxlength='100'>"+
             "<label for='password'>密码</label><input id='password' name='password' type='password' autocomplete='current-password' placeholder='输入密码' required>"+
-            "<button type='submit'>登录并继续 →</button></form><p class='foot'>由 Alisa 统一账号提供身份验证<br>应用权限将在下一步确认</p></main></body></html>";
+            "<button type='submit'>登录并继续 →</button></form><p><a href='"+HtmlUtils.htmlEscape(passwordResetUrl)+"'>忘记密码？</a></p><p class='foot'>由 Alisa 统一账号提供身份验证<br>应用权限将在下一步确认</p></main></body></html>";
         return ResponseEntity.ok().contentType(new MediaType("text","html",StandardCharsets.UTF_8)).cacheControl(CacheControl.noStore())
             .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
             .header("Referrer-Policy","no-referrer").body(body);

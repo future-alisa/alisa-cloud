@@ -39,21 +39,35 @@ public class OAuthConfiguration {
             .authorizeHttpRequests(c->c.anyRequest().permitAll()).build();
     }
     @Bean
-    AuthenticationProvider accountAuthentication(IdentityProviderRegistry providers) {
+    AuthenticationProvider accountAuthentication(IdentityProviderRegistry providers, com.alisa.user.service.AccessTokenService tokens) {
         return new AuthenticationProvider() {
             public boolean supports(Class<?> type) { return UsernamePasswordAuthenticationToken.class.isAssignableFrom(type); }
             public Authentication authenticate(Authentication input) {
                 try {
                     var identity=providers.authenticate("local",new IdentityCredentials("password",Map.of("username",input.getName(),"password",input.getCredentials().toString())));
-                    var principal=User.withUsername(identity.subject()).password("").authorities("USER").build();
+                    var principal=User.withUsername(identity.subject()).password("").authorities("USER", tokens.browserVersionAuthority(identity.subject())).build();
                     return UsernamePasswordAuthenticationToken.authenticated(principal,null,principal.getAuthorities());
-                } catch (AuthenticationRejectedException exception) { throw new BadCredentialsException("Invalid credentials"); }
+                } catch (AuthenticationRejectedException | org.springframework.web.server.ResponseStatusException exception) { throw new BadCredentialsException("Invalid credentials"); }
             }
         };
     }
     @Bean @Order(99)
     SecurityFilterChain denyOther(HttpSecurity http) throws Exception {
         return http.authorizeHttpRequests(c->c.anyRequest().denyAll()).build();
+    }
+
+    private static boolean expiredBrowserSession(Authentication principal, com.alisa.user.service.AccessTokenService tokens,
+            jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
+        if (principal == null || !principal.isAuthenticated() ||
+            principal instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) return false;
+        try {
+            tokens.requireBrowserSession(principal);
+            return false;
+        } catch (org.springframework.web.server.ResponseStatusException exception) {
+            new org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler()
+                .logout(request, response, principal);
+            return true;
+        }
     }
 
     @Configuration(proxyBeanMethods=false)
@@ -109,7 +123,7 @@ public class OAuthConfiguration {
             };
         }
         @Bean @Order(1)
-        SecurityFilterChain protocol(HttpSecurity http, OAuthApplications clients, OAuth2AuthorizationService authorizations) throws Exception {
+        SecurityFilterChain protocol(HttpSecurity http, OAuthApplications clients, OAuth2AuthorizationService authorizations, com.alisa.user.service.AccessTokenService tokens) throws Exception {
             OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
             http.getConfigurer(OAuth2AuthorizationServerConfigurer.class).authorizationEndpoint(c->c.consentPage("/oauth/consent"));
             http.exceptionHandling(c->c.authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login")));
@@ -118,7 +132,9 @@ public class OAuthConfiguration {
                         throws java.io.IOException,jakarta.servlet.ServletException {
                     String route=new org.springframework.web.util.UrlPathHelper().getPathWithinApplication(request);
                     var principal=SecurityContextHolder.getContext().getAuthentication();
-                    if(route.equals("/oauth2/authorize") && principal!=null && principal.isAuthenticated() && !(principal instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
+                    if (route.equals("/oauth2/authorize") && !expiredBrowserSession(principal, tokens, request, response) &&
+                        principal != null && principal.isAuthenticated() &&
+                        !(principal instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
                         String clientId=request.getParameter("client_id");
                         try {if(clientId!=null) clients.requireTenantUser(clientId,principal.getName());}
                         catch(org.springframework.web.server.ResponseStatusException e) {response.sendError(403,"Tenant membership required");return;}
@@ -165,8 +181,16 @@ public class OAuthConfiguration {
             return http.build();
         }
         @Bean @Order(2)
-        SecurityFilterChain browser(HttpSecurity http,AuthenticationProvider accountAuthentication) throws Exception {
+        SecurityFilterChain browser(HttpSecurity http,AuthenticationProvider accountAuthentication,
+                com.alisa.user.service.AccessTokenService tokens) throws Exception {
             return http.securityMatcher("/login","/logout","/oauth/**").authenticationProvider(accountAuthentication)
+                .addFilterBefore(new OncePerRequestFilter() {
+                    protected void doFilterInternal(jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response,
+                            jakarta.servlet.FilterChain chain) throws java.io.IOException, jakarta.servlet.ServletException {
+                        expiredBrowserSession(SecurityContextHolder.getContext().getAuthentication(), tokens, request, response);
+                        chain.doFilter(request, response);
+                    }
+                }, org.springframework.security.web.csrf.CsrfFilter.class)
                 .exceptionHandling(c->c.defaultAuthenticationEntryPointFor(
                     new org.springframework.security.web.authentication.HttpStatusEntryPoint(org.springframework.http.HttpStatus.UNAUTHORIZED),
                     new org.springframework.security.web.util.matcher.AntPathRequestMatcher("/oauth/admin/session"))

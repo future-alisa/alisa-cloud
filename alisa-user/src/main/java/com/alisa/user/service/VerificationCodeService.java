@@ -34,14 +34,21 @@ public class VerificationCodeService {
     }
     public void send(String email) {
         String key = properties.getResetKeyPrefix() + email;
-        if (!Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key + ":send", "1", properties.getResetSendInterval()))) {
+        send(email, key, key + ":send", "密码重置");
+    }
+    public void sendActivation(String email, String account) {
+        String prefix = properties.getResetKeyPrefix() + ":organization-activation:";
+        send(email, prefix + account, prefix + "send:" + email, "组织账号激活");
+    }
+    private void send(String email, String key, String sendKey, String purpose) {
+        if (!Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(sendKey, "1", properties.getResetSendInterval()))) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "发送过于频繁，请稍后再试");
         }
         String code = String.format("%06d", RANDOM.nextInt(1_000_000));
         try {
             redis.opsForValue().set(key + ":code", code, properties.getResetCodeTtl());
             redis.delete(key + ":attempts");
-            mail.send(email, "【" + properties.getApplicationName() + "】密码重置验证码",
+            mail.send(email, "【" + properties.getApplicationName() + "】" + purpose + "验证码",
                     "您的验证码为：" + code + "\n有效期 " + properties.getResetCodeTtl().toMinutes()
                     + " 分钟，请勿泄露给他人。如非本人操作，请忽略此邮件。");
         } catch (RuntimeException exception) {
@@ -50,8 +57,13 @@ public class VerificationCodeService {
         }
     }
     public boolean consume(String email, String code) {
-        if (email == null || code == null || !code.matches("\\d{6}")) return false;
-        String key = properties.getResetKeyPrefix() + email;
+        return email != null && consumeKey(properties.getResetKeyPrefix() + email, code);
+    }
+    public boolean consumeActivation(String account, String code) {
+        return consumeKey(properties.getResetKeyPrefix() + ":organization-activation:" + account, code);
+    }
+    private boolean consumeKey(String key, String code) {
+        if (code == null || !code.matches("\\d{6}")) return false;
         return Long.valueOf(1).equals(redis.execute(CONSUME, List.of(key + ":code", key + ":attempts"), code));
     }
 }

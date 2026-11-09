@@ -19,3 +19,13 @@ Argo CD 的 alisa-cloud 仓库连接使用 HTTP 代理。用 `scripts/prepare-ad
 使用 `deploy/argocd/alisa-admin.yaml` 注册应用。同步依次创建备份存储、运行数据库迁移、启动后端与前端，最后开放路由。迁移先写入加密备份再执行新增表、列和索引的语句。备份 PVC 保留，迁移失败时检查 Job 日志与备份状态后再重试。回退时停用该应用的路由与工作负载，保留数据库与备份。
 
 同步后检查两项 Deployment 就绪、`/admin/` 返回页面、未登录请求租户列表被拒绝、Alisa 账号能登录并读取租户列表。通过这些检查后再添加门户入口。
+
+## 账号激活邮件
+
+启用真实邮箱投递时，在 `alisa-infra` 配置 `alisa-admin-account-delivery` Secret。发布脚本将它作为环境变量注入后台 API，数据库迁移 Job 不读取这份凭据。用户从激活页点击「发送邮箱验证码」后，邮件投递到该待激活账号登记的地址。
+
+- SMTP 配置包含 `MAIL_HOST`、`MAIL_PORT`、`MAIL_USERNAME`、`MAIL_PASSWORD` 和 `MAIL_FROM`。发件地址须由 SMTP 服务商授权。587 端口通常使用 `MAIL_STARTTLS=true`、`MAIL_STARTTLS_REQUIRED=true`、`MAIL_SSL=false`。465 端口通常使用 `MAIL_SSL=true`、`MAIL_STARTTLS=false`，以服务商要求为准。
+- 验证码存储需要可从后台 API 访问的 Redis。配置 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 和 `REDIS_DB`。选择专用 Redis 实例或独立数据库。
+- SMTP 授权码和 Redis 密码通过集群 Secret 管理。配置后重新创建后台 API Pod，再用团队控制的邮箱验证收件及账号激活。
+
+使用 QQ 邮箱发验证码时，设置 `MAIL_HOST=smtp.qq.com`、`MAIL_PORT=465`、`MAIL_AUTH=true`、`MAIL_SSL=true`、`MAIL_STARTTLS=false`。用户名与发件地址均填完整的 QQ 邮箱地址，`MAIL_PASSWORD` 使用该邮箱的 SMTP 授权码。

@@ -40,11 +40,13 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
     "alisa.oauth.applications.demo.[demo\\:target\\:read]=Read","alisa.oauth.applications.demo.[demo\\:target\\:delete]=Delete"})
 class TenantFlowTest {
     @org.springframework.boot.test.context.TestConfiguration @EnableWebSecurity @EnableWebMvc @EnableTransactionManagement(proxyTargetClass=true)
-    @Import({OAuthConfiguration.class,TenantConfiguration.class,TenantController.class,TenantErrors.class,TenantPages.class})
+    @Import({OAuthConfiguration.class,TenantConfiguration.class,TenantController.class,OrganizationController.class,TenantErrors.class,TenantPages.class})
     static class Config {
         @Bean DataSource dataSource() {
             var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa","");
-            new ResourceDatabasePopulator(new ClassPathResource("sql/oauth.sql"),new ClassPathResource("sql/tenant.sql")).execute(ds);return ds;
+            new ResourceDatabasePopulator(new ClassPathResource("sql/oauth.sql"),new ClassPathResource("sql/tenant.sql")).execute(ds);
+            new JdbcTemplate(ds).execute("create table tb_user (user_id varchar(64) primary key, user_name varchar(255), user_email varchar(255))");
+            return ds;
         }
         @Bean JdbcTemplate jdbc(DataSource ds) {return new JdbcTemplate(ds);}
         @Bean org.springframework.transaction.PlatformTransactionManager transactions(DataSource ds) {return new DataSourceTransactionManager(ds);}
@@ -52,12 +54,122 @@ class TenantFlowTest {
         @Bean UserMapper users() {
             var users=mock(UserMapper.class);when(users.findUserByID(anyString())).thenAnswer(call->{var user=new com.alisa.user.entity.User();user.setId(call.getArgument(0));user.setUsername(call.getArgument(0));return user;});return users;
         }
-        @Bean AuthorizationProperties authorizationProperties() {var p=new AuthorizationProperties();p.setApplications(Map.of("demo","tenant"));return p;}
+        @Bean com.alisa.user.service.IdentityService identityService() {return mock(com.alisa.user.service.IdentityService.class);}
+        @Bean com.alisa.user.service.VerificationCodeService verificationCodes() {return mock(com.alisa.user.service.VerificationCodeService.class);}
+        @Bean AuthorizationProperties authorizationProperties() {var p=new AuthorizationProperties();p.setApplications(Map.of("demo","tenant"));p.setAdministrators(Set.of("platform-admin"));return p;}
         @Bean AuthorizationEngine engine(List<AuthorizationProvider> providers) {return new AuthorizationEngine(providers,Map.of("demo","tenant"));}
         @Bean AccessTokenService accessTokenService() {new JwtUtil().setJwtProperties(new JwtProperties());return new AccessTokenService();}
         @Bean AuthorizationController authorizationController(AuthorizationEngine engine,AuthorizationProperties props,AccessTokenService tokens) {return new AuthorizationController(engine,props,tokens);}
     }
     @Autowired TenantDirectory tenants;@Autowired OAuthApplications apps;@Autowired AccessTokenService tokens;
+    @Autowired OrganizationDirectory organizations;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired com.alisa.user.service.IdentityService identity;
+    @Autowired com.alisa.user.service.VerificationCodeService codes;
+
+    @Test void platformTenantDeletionRequiresAdministratorAndRetainsAudit() throws Exception {
+        String owner = "retired-owner";
+        String tenant = tenants.create(owner, "Retired workspace");
+        String administrator = userToken("platform-admin");
+        String path = "/api/v1/user/tenants/platform/" + tenant;
+
+        mvc.perform(delete(path).param("name", "Retired workspace").header("Authorization", userToken(owner)))
+            .andExpect(status().isForbidden());
+        mvc.perform(delete(path).param("name", "Retired workspace").header("Authorization", administrator))
+            .andExpect(status().isConflict());
+        mvc.perform(put(path + "/status").header("Authorization", administrator)
+                .contentType("application/json").content("{\"enabled\":false}"))
+            .andExpect(status().isOk());
+        assertFalse(tenants.active(tenant));
+        mvc.perform(delete(path).param("name", "Wrong workspace").header("Authorization", administrator))
+            .andExpect(status().isBadRequest());
+
+        jdbc.update("insert into alisa_oauth_application(client_id, owner_id, application_id, kind, tenant_id) values (?,?,?,?,?)",
+            "retired-client", owner, "demo", "resource", tenant);
+        mvc.perform(delete(path).param("name", "Retired workspace").header("Authorization", administrator))
+            .andExpect(status().isConflict());
+        jdbc.update("update alisa_oauth_application set enabled=false where client_id=?", "retired-client");
+
+        mvc.perform(delete(path).param("name", "Retired workspace").header("Authorization", administrator))
+            .andExpect(status().isOk());
+        assertTrue(tenants.list(owner).stream().noneMatch(item -> item.id().equals(tenant)));
+        assertTrue(tenants.platformTenants().stream().noneMatch(item -> item.id().equals(tenant)));
+        assertEquals(List.of("platform-admin"), jdbc.queryForList(
+            "select actor_id from alisa_tenant_audit where tenant_id=? and event_type='TENANT_DELETED'", String.class, tenant));
+        assertEquals(0, jdbc.queryForObject(
+            "select count(*) from alisa_oauth_application where tenant_id=?", Integer.class, tenant));
+        mvc.perform(put(path + "/status").header("Authorization", administrator)
+                .contentType("application/json").content("{\"enabled\":true}"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void managedAccountRequiresEmailVerificationAndCannotCrossOrganizations() throws Exception {
+        String owner = "directory-owner";
+        var organization = organizations.create(owner, "Directory A");
+        var other = organizations.create("other-owner", "Directory B");
+        String tenant = tenants.create(owner, "Directory A workspace");
+        String unrelated = tenants.create(owner, "Unlinked workspace");
+
+        mvc.perform(get("/api/v1/user/organizations")).andExpect(status().isUnauthorized());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.accounts(organization.id(), "other-owner"));
+        organizations.link(organization.id(), owner, tenant);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.link(other.id(), "other-owner", tenant));
+
+        var link = organizations.issue(organization.id(), owner, "managed-user", "managed@example.org");
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.activate(link.id(), link.token(), "Test password 42", "000000"));
+        verify(identity, never()).register(any());
+        organizations.sendActivationCode(link.id(), link.token());
+        verify(codes).sendActivation("managed@example.org", link.id());
+
+        when(codes.consumeActivation(link.id(), "123456")).thenReturn(true);
+        when(identity.register(any())).thenReturn("managed-user-id");
+        organizations.activate(link.id(), link.token(), "Test password 42", "123456");
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.activate(link.id(), link.token(), "Test password 42", "123456"));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.assign(organization.id(), owner, link.id(), unrelated));
+        jdbc.update("insert into tb_user (user_id, user_name, user_email) values (?, ?, ?)",
+            "managed-user-id", "managed-user", "managed@example.org");
+        assertEquals(List.of(new TenantDirectory.InvitationCandidate("managed-user-id", "managed-user", "managed@example.org", "AVAILABLE")),
+            tenants.invitationCandidates(tenant, owner, "EXAMPLE"));
+        assertTrue(tenants.invitationCandidates(unrelated, owner, "managed").isEmpty());
+        organizations.assign(organization.id(), owner, link.id(), tenant);
+        organizations.assign(organization.id(), owner, link.id(), tenant);
+        assertEquals("MEMBER", tenants.role(tenant, "managed-user-id"));
+        assertEquals("MEMBER", tenants.invitationCandidates(tenant, owner, "managed-user-id").get(0).status());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> tenants.invitationCandidates(tenant, "managed-user-id", "managed"));
+        var membership = tenants.members(tenant, owner);
+        assertEquals("managed-user", membership.stream().filter(m -> m.userId().equals("managed-user-id")).findFirst().orElseThrow().username());
+        assertNull(membership.stream().filter(m -> m.userId().equals(owner)).findFirst().orElseThrow().username());
+        String original = userToken("managed-user-id");
+        String action = "/api/v1/user/organizations/" + organization.id() + "/accounts/" + link.id() + "/actions";
+        mvc.perform(post(action).header("Authorization", original)
+            .contentType("application/json").content("{\"action\":\"DELETE\"}")).andExpect(status().isForbidden());
+        mvc.perform(post(action).header("Authorization", userToken(owner))
+            .contentType("application/json").content("{\"action\":\"RESET_PASSWORD\"}")).andExpect(status().isNoContent());
+        verify(codes).send("managed@example.org");
+
+        organizations.manage(organization.id(), owner, link.id(), OrganizationDirectory.AccountAction.SUSPEND);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> tokens.requireFirstPartyUserId(original));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> userToken("managed-user-id"));
+        organizations.manage(organization.id(), owner, link.id(), OrganizationDirectory.AccountAction.RESUME);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> tokens.requireFirstPartyUserId(original));
+
+        String resumed = userToken("managed-user-id");
+        organizations.manage(organization.id(), owner, link.id(), OrganizationDirectory.AccountAction.DELETE);
+        assertEquals("DELETED", organizations.accounts(organization.id(), owner).get(0).status());
+        assertNotNull(organizations.accounts(organization.id(), owner).get(0).restoreUntil());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> tokens.requireFirstPartyUserId(resumed));
+        organizations.manage(organization.id(), owner, link.id(), OrganizationDirectory.AccountAction.RESTORE);
+        assertEquals("ACTIVE", organizations.accounts(organization.id(), owner).get(0).status());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> tokens.requireFirstPartyUserId(resumed));
+        assertEquals("managed-user-id", tokens.requireFirstPartyUserId(userToken("managed-user-id")));
+        assertEquals("MEMBER", tenants.role(tenant, "managed-user-id"));
+    }
     @Autowired WebApplicationContext context;
     MockMvc mvc;ObjectMapper json=new ObjectMapper();
     @BeforeEach void setup() {mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();}

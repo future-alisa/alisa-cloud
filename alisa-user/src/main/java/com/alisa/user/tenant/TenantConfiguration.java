@@ -10,6 +10,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @ConditionalOnProperty(prefix="alisa.tenancy",name="enabled",havingValue="true")
 public class TenantConfiguration {
     @Bean TenantDirectory tenantDirectory(JdbcTemplate jdbc,UserMapper users) {return new TenantDirectory(jdbc,users);}
+    @Bean OrganizationDirectory organizationDirectory(JdbcTemplate jdbc, UserMapper users,
+            com.alisa.user.service.IdentityService identity, TenantDirectory tenants,
+            com.alisa.user.service.VerificationCodeService codes) {
+        return new OrganizationDirectory(jdbc, users, identity, tenants, codes);
+    }
     @Bean AuthorizationProvider tenantAuthorizationProvider(TenantDirectory tenants) {
         return new AuthorizationProvider() {
             public String id(){return "tenant";}

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRightLeft,
   Mail,
@@ -26,6 +26,7 @@ import {
   RoleBadge,
   roleLabels,
   SecretModal,
+  shortId,
   useToast,
 } from "../ui";
 export default function MembersPage() {
@@ -50,8 +51,8 @@ export default function MembersPage() {
   } | null>(null);
   const [secret, setSecret] = useState<CreatedInvitation | null>(null);
   const toast = useToast();
-  const memberName = (id: string) =>
-    id === session?.userId ? `${session.username}（我）` : id;
+  const memberName = (member: Member) =>
+    member.username || (member.userId === session?.userId ? session.username : undefined);
   const refresh = () => {
     members.reload();
     invites.reload();
@@ -59,7 +60,7 @@ export default function MembersPage() {
   };
   const filtered =
     members.data?.filter((member) =>
-      `${member.userId} ${memberName(member.userId)}`
+      `${member.userId} ${memberName(member) ?? ""}`
         .toLowerCase()
         .includes(search.toLowerCase())
     ) || [];
@@ -68,7 +69,7 @@ export default function MembersPage() {
       <PageTitle
         eyebrow="PEOPLE"
         title="成员管理"
-        description="邀请团队成员，为每个人分配合适的管理角色。"
+        description={`查看已加入「${selected?.name}」的 Alisa 账号及其租户角色。`}
         actions={
           <>
             {owner && (
@@ -114,7 +115,7 @@ export default function MembersPage() {
             <Search size={17} />
             <input
               aria-label="搜索成员"
-              placeholder="搜索用户 ID"
+              placeholder="搜索用户名或用户 ID"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -144,6 +145,7 @@ export default function MembersPage() {
                 <tbody>
                   {filtered.map((member) => {
                     const me = member.userId === session?.userId;
+                    const name = memberName(member);
                     const canManage =
                       admin &&
                       member.role !== "OWNER" &&
@@ -153,17 +155,11 @@ export default function MembersPage() {
                         <td>
                           <div className="person-cell">
                             <span className="avatar small">
-                              {me
-                                ? session.username.slice(0, 1).toUpperCase()
-                                : member.userId.slice(0, 1).toUpperCase()}
+                              {name?.slice(0, 1).toUpperCase() || "?"}
                             </span>
                             <div>
-                              <strong>
-                                {me ? session.username : "团队成员"}
-                              </strong>
-                              <small>
-                                {me ? "当前登录账号" : "已加入当前租户"}
-                              </small>
+                              <strong>{name || "账号名称不可用"}</strong>
+                              {me && <small>当前登录账号</small>}
                             </div>
                             {me && <span className="mini-label">我</span>}
                           </div>
@@ -197,7 +193,7 @@ export default function MembersPage() {
                                       : "移除这位成员？",
                                     description: me
                                       ? "退出后你将无法访问这个租户的数据，重新加入需要新的邀请。"
-                                      : `移除用户 ${member.userId} 后，其租户会话和委托访问将失效。`,
+                                      : `移除用户 ${name || shortId(member.userId)} 后，其租户会话和委托访问将失效。`,
                                     action: async () => {
                                       await api(
                                         tenantPath(
@@ -356,6 +352,13 @@ export default function MembersPage() {
     </>
   );
 }
+type InvitationCandidate = {
+  userId: string;
+  username: string;
+  email: string;
+  status: "AVAILABLE" | "MEMBER" | "PENDING";
+};
+
 function MemberDialog({
   kind,
   member,
@@ -372,6 +375,18 @@ function MemberDialog({
   const { selected } = useTenants();
   const { api, session } = useSession();
   const [userId, setUserId] = useState(member?.userId || "");
+  const [candidate, setCandidate] = useState<InvitationCandidate>();
+  const [debouncedTerm, setDebouncedTerm] = useState("");
+  const term = kind === "invite" && !candidate ? userId.trim() : "";
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedTerm(term), 250);
+    return () => window.clearTimeout(timer);
+  }, [term]);
+  const candidates = useQuery<InvitationCandidate[]>(
+    kind === "invite" && !candidate && term === debouncedTerm
+      ? tenantPath(selected!.id, "/invitation-candidates") + "?q=" + encodeURIComponent(term)
+      : null
+  );
   const [role, setRole] = useState<Role>(member?.role || "MEMBER");
   const action = useAction();
   const toast = useToast();
@@ -386,7 +401,7 @@ function MemberDialog({
       if (kind === "invite")
         secret = await api(tenantPath(selected!.id, "/invitations"), {
           method: "POST",
-          body: { userId: userId.trim(), role },
+          body: { userId: candidate?.userId ?? userId.trim(), role },
         });
       else if (kind === "role")
         await api(
@@ -441,7 +456,7 @@ function MemberDialog({
                 .filter((m) => m.userId !== session?.userId)
                 .map((m) => (
                   <option key={m.userId} value={m.userId}>
-                    {m.userId} · {roleLabels[m.role]}
+                    {m.username || shortId(m.userId)} · {roleLabels[m.role]}
                   </option>
                 ))}
             </select>
@@ -449,19 +464,44 @@ function MemberDialog({
         ) : (
           <>
             <label>
-              用户 ID
+              {kind === "invite" ? "要邀请的账号" : "成员账号"}
               <input
                 autoFocus
                 required
                 readOnly={kind === "role"}
-                placeholder="粘贴被邀请用户的 ID"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
+                placeholder="输入用户名、邮箱或用户 ID"
+                autoComplete="off"
+                maxLength={255}
+                value={kind === "role" ? member?.username || userId : userId}
+                onChange={(event) => {
+                  setCandidate(undefined);
+                  setUserId(event.target.value);
+                }}
               />
               {kind === "invite" && (
-                <small>用户可以在自己的「租户设置」中复制用户 ID。</small>
+                <small>可搜索关联组织的账号，也可输入完整邮箱或用户 ID。</small>
               )}
             </label>
+            {kind === "invite" && (
+              <div className="invitation-suggestions" role="group" aria-label="账号建议">
+                {candidate && <small role="status">已选中 {candidate.username}（{candidate.email}）</small>}
+                {!candidate && (term !== debouncedTerm || candidates.loading) && <small role="status">正在搜索账号…</small>}
+                {candidates.error && <small role="status">暂时无法搜索，仍可输入完整邮箱或用户 ID。</small>}
+                {candidates.data?.length === 0 && <small role="status">
+                  {term ? "关联组织内没有匹配的账号。" : "当前租户没有可列出的关联组织账号。"}
+                </small>}
+                {candidates.data?.map(item => (
+                  <button key={item.userId} type="button" disabled={item.status !== "AVAILABLE"} onClick={() => {
+                    setCandidate(item);
+                    setUserId(item.username);
+                  }}>
+                    <strong>{item.username}</strong>
+                    {item.status !== "AVAILABLE" && <span>{item.status === "MEMBER" ? "已加入" : "待接受邀请"}</span>}
+                    <small>{item.email}</small>
+                  </button>
+                ))}
+              </div>
+            )}
             <label>
               租户角色
               <select

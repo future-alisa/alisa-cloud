@@ -17,7 +17,7 @@ public class TenantDirectory {
     private final UserMapper users;
     public TenantDirectory(JdbcTemplate jdbc,UserMapper users) { this.jdbc=jdbc;this.users=users; }
     public record Tenant(String id,String name,boolean enabled,String role) {}
-    public record Member(String userId,String role) {}
+    public record Member(String userId,String role,String username) {}
     public record Invitation(String id,String token) {}
     public record PendingInvitation(String id,String userId,String role,java.sql.Timestamp expiresAt) {}
     public List<PendingInvitation> invitations(String tenant,String actor) {
@@ -45,6 +45,18 @@ public class TenantDirectory {
     private void lock(String tenant) {
         if(jdbc.queryForList("select id from alisa_tenant where id=? for update",String.class,tenant).isEmpty()) throw denied();
     }
+    @Transactional public void lockOwnedTenant(String tenant, String actor) {
+        lock(tenant);
+        if (!"OWNER".equals(role(tenant, actor))) throw denied();
+    }
+    @Transactional public void assignManagedMember(String tenant, String actor, String user) {
+        lockOwnedTenant(tenant, actor);
+        if (jdbc.queryForObject("select count(*) from alisa_tenant_member where tenant_id=? and user_id=?", Integer.class, tenant, user)==0) {
+            jdbc.update("insert into alisa_tenant_member(tenant_id,user_id,role,token_version) values(?,?,'MEMBER',?)",
+                tenant, user, UUID.randomUUID().toString());
+            audit(tenant, actor, "MANAGED_MEMBER_ASSIGNED", user, "{}");
+        }
+    }
     @Transactional public String create(String user,String name) {
         validateName(name); if(users.findUserByID(user)==null) throw denied();
         String id=UUID.randomUUID().toString();jdbc.update("insert into alisa_tenant(id,name,enabled,token_version) values(?,?,true,?)",id,name.trim(),UUID.randomUUID().toString());
@@ -53,7 +65,61 @@ public class TenantDirectory {
     }
     @Transactional public void update(String tenant,String actor,String name,boolean enabled) {
         lock(tenant);owner(tenant,actor);validateName(name);
-        jdbc.update("update alisa_tenant set name=?,enabled=? where id=?",name.trim(),enabled,tenant);
+        setStatus(tenant, actor, name.trim(), enabled);
+    }
+
+    public record PlatformTenant(String id, String name, boolean enabled) {}
+
+    public List<PlatformTenant> platformTenants() {
+        return jdbc.query("""
+            select t.id, t.name, t.enabled from alisa_tenant t
+            where not exists (select 1 from alisa_tenant_audit a
+                              where a.tenant_id = t.id and a.event_type = 'TENANT_DELETED')
+            order by t.created_at, t.id
+            """, (row, index) -> new PlatformTenant(row.getString(1), row.getString(2), row.getBoolean(3)));
+    }
+
+    private PlatformTenant lockPlatformTenant(String tenant) {
+        lock(tenant);
+        if (Boolean.TRUE.equals(jdbc.queryForObject(
+                "select count(*) > 0 from alisa_tenant_audit where tenant_id=? and event_type='TENANT_DELETED'",
+                Boolean.class, tenant))) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "租户已删除");
+        return jdbc.queryForObject("select id,name,enabled from alisa_tenant where id=?",
+            (row, index) -> new PlatformTenant(row.getString(1), row.getString(2), row.getBoolean(3)), tenant);
+    }
+
+    @Transactional public void platformStatus(String tenant, String actor, boolean enabled) {
+        var current = lockPlatformTenant(tenant);
+        if (current.enabled() != enabled) setStatus(tenant, actor, current.name(), enabled);
+    }
+
+    @Transactional public void deleteTenant(String tenant, String actor, String name) {
+        var current = lockPlatformTenant(tenant);
+        if (current.enabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "请先停用租户");
+        if (!current.name().equals(name)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "租户名称不匹配");
+        if (Boolean.TRUE.equals(jdbc.queryForObject(
+                "select count(*) > 0 from alisa_oauth_application where tenant_id=? and enabled=true",
+                Boolean.class, tenant))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "请先重新启用租户、停用所有接入应用和验证凭据，再停用并删除租户");
+        }
+        // Keep the disabled tenant row as the audit record's foreign-key target.
+        String clientIds = """
+            select c.id from oauth2_registered_client c
+            join alisa_oauth_application a on a.client_id=c.client_id where a.tenant_id=?
+            """;
+        jdbc.update("delete from oauth2_authorization where registered_client_id in (" + clientIds + ")", tenant);
+        jdbc.update("delete from oauth2_authorization_consent where registered_client_id in (" + clientIds + ")", tenant);
+        jdbc.update("delete from oauth2_registered_client where client_id in (select client_id from alisa_oauth_application where tenant_id=?)", tenant);
+        jdbc.update("delete from alisa_oauth_application where tenant_id=?", tenant);
+        jdbc.update("delete from alisa_tenant_permission where tenant_id=?", tenant);
+        jdbc.update("delete from alisa_tenant_invitation where tenant_id=?", tenant);
+        jdbc.update("delete from alisa_tenant_member where tenant_id=?", tenant);
+        jdbc.update("delete from alisa_organization_tenant where tenant_id=?", tenant);
+        audit(tenant, actor, "TENANT_DELETED", tenant, "{}");
+    }
+
+    private void setStatus(String tenant, String actor, String name, boolean enabled) {
+        jdbc.update("update alisa_tenant set name=?,enabled=? where id=?",name,enabled,tenant);
         if(!enabled) {
             jdbc.update("update alisa_tenant set token_version=? where id=?",UUID.randomUUID().toString(),tenant);
             jdbc.update("delete from oauth2_authorization where registered_client_id in (select c.id from oauth2_registered_client c join alisa_oauth_application a on a.client_id=c.client_id where a.tenant_id=?)",tenant);
@@ -62,12 +128,50 @@ public class TenantDirectory {
         audit(tenant,actor,enabled?"TENANT_UPDATED":"TENANT_DISABLED",tenant,"{}");
     }
     public List<Member> members(String tenant,String actor) {
-        member(tenant,actor);return jdbc.query("select user_id,role from alisa_tenant_member where tenant_id=? order by user_id",(r,n)->new Member(r.getString(1),r.getString(2)),tenant);
+        member(tenant,actor);
+        return jdbc.query("""
+            select m.user_id, m.role, u.user_name
+            from alisa_tenant_member m
+            left join tb_user u on u.user_id = m.user_id
+            where m.tenant_id = ?
+            order by m.user_id
+            """, (row, index) -> new Member(row.getString(1), row.getString(2), row.getString(3)), tenant);
     }
+    public record InvitationCandidate(String userId, String username, String email, String status) {}
+
+    public List<InvitationCandidate> invitationCandidates(String tenant, String actor, String query) {
+        admin(tenant, actor);
+        String term = query.strip().toLowerCase(Locale.ROOT);
+        if (term.length() > 255) return List.of();
+        return jdbc.query("""
+            select u.user_id, u.user_name, u.user_email,
+                   case
+                     when exists (select 1 from alisa_tenant_member m
+                                  where m.tenant_id = t.tenant_id and m.user_id = u.user_id) then 'MEMBER'
+                     when exists (select 1 from alisa_tenant_invitation i
+                                  where i.tenant_id = t.tenant_id and i.user_id = u.user_id
+                                    and i.expires_at > CURRENT_TIMESTAMP) then 'PENDING'
+                     else 'AVAILABLE'
+                   end as candidate_status
+            from alisa_organization_tenant t
+            join alisa_organization_account a on a.organization_id = t.organization_id
+            join tb_user u on u.user_id = a.user_id
+            where t.tenant_id = ? and a.account_status = 'ACTIVE'
+              and (? = '' or locate(?, lower(u.user_name)) > 0
+                          or locate(?, lower(u.user_email)) > 0 or locate(?, lower(u.user_id)) > 0)
+            order by candidate_status, u.user_name, u.user_id
+            limit 8
+            """, (row, index) -> new InvitationCandidate(row.getString(1), row.getString(2), row.getString(3), row.getString(4)),
+            tenant, term, term, term, term);
+    }
+
     @Transactional public Invitation invite(String tenant,String actor,String user,String role) {
         lock(tenant);admin(tenant,actor);validRole(role);
         if("ADMIN".equals(role)) owner(tenant,actor);
-        if(users.findUserByID(user)==null) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"用户不存在");
+        if (user == null || user.isBlank() || user.length() > 255) throw new IllegalArgumentException("请输入用户 ID 或邮箱");
+        var account = user.contains("@") ? users.findUserByEmail(user.trim().toLowerCase(Locale.ROOT)) : users.findUserByID(user.trim());
+        if (account == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
+        user = account.getId();
         String id=UUID.randomUUID().toString(),token=UUID.randomUUID()+"."+UUID.randomUUID();
         jdbc.update("insert into alisa_tenant_invitation(id,tenant_id,user_id,role,token_hash,expires_at) values(?,?,?,?,?,?)",id,tenant,user,role,hash(token),Timestamp.from(Instant.now().plus(Duration.ofDays(2))));
         audit(tenant,actor,"MEMBER_INVITED",user,"{}");return new Invitation(id,token);

@@ -63,7 +63,7 @@ for comp,image,port,uid,wave in [('api',api,8084,1000,0),('web',web,8080,101,10)
  con={'name':comp,'image':image,'ports':[{'name':'http','containerPort':port}],'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},'volumeMounts':[{'name':'tmp','mountPath':'/tmp'}],'resources':{'requests':{'cpu':'100m','memory':'256Mi' if comp=='api' else '32Mi'},'limits':{'cpu':'1','memory':'768Mi' if comp=='api' else '128Mi'}},'readinessProbe':{'httpGet':{'path':health,'port':'http'},'periodSeconds':10},'livenessProbe':{'httpGet':{'path':health,'port':'http'},'periodSeconds':20},'startupProbe':{'httpGet':{'path':health,'port':'http'},'periodSeconds':5,'failureThreshold':60}}
  volumes=[{'name':'tmp','emptyDir':{}}]
  if comp=='api':
-  con['envFrom']=secretEnv
+  con['envFrom'] = [*secretEnv, {'secretRef': {'name': 'alisa-admin-account-delivery', 'optional': True}}]
   con['env']=[{'name':'SPRING_PROFILES_ACTIVE','value':'admin'},{'name':'SPRING_CONFIG_ADDITIONAL_LOCATION','value':'file:/config/'},{'name':'JAVA_TOOL_OPTIONS','value':'-XX:MaxRAMPercentage=65'},{'name':'PORTAL_BOOTSTRAP_ADMINISTRATOR','valueFrom':{'secretKeyRef':{'name':'alisa-admin-bootstrap','key':'PORTAL_BOOTSTRAP_ADMINISTRATOR'}}}]
   con['volumeMounts'].append({'name':'config','mountPath':'/config','readOnly':True});volumes.append({'name':'config','configMap':{'name':'alisa-admin-config'}})
  else:con['command']=['nginx','-g','daemon off;']

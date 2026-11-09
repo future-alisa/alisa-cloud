@@ -2,9 +2,10 @@ package com.alisa.user.tenant;
 
 import java.util.*;
 import com.alisa.user.oauth.*;
+import com.alisa.authorization.config.AuthorizationProperties;
+import org.springframework.web.server.ResponseStatusException;
 import com.alisa.user.service.AccessTokenService;
 import com.alisa.user.mapper.UserMapper;
-import com.alisa.util.JwtUtil;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.*;
@@ -13,7 +14,46 @@ import org.springframework.http.*;
 @ConditionalOnProperty(prefix="alisa.tenancy",name="enabled",havingValue="true")
 public class TenantController {
     private final TenantDirectory tenants;private final AccessTokenService tokens;private final OAuthApplications apps;private final OAuthProperties catalog;private final UserMapper users;
-    public TenantController(TenantDirectory tenants,AccessTokenService tokens,OAuthApplications apps,OAuthProperties catalog,UserMapper users) {this.tenants=tenants;this.tokens=tokens;this.apps=apps;this.catalog=catalog;this.users=users;}
+    private final AuthorizationProperties authorization;
+
+    public TenantController(TenantDirectory tenants, AccessTokenService tokens, OAuthApplications apps,
+                            OAuthProperties catalog, UserMapper users, AuthorizationProperties authorization) {
+        this.tenants = tenants;
+        this.tokens = tokens;
+        this.apps = apps;
+        this.catalog = catalog;
+        this.users = users;
+        this.authorization = authorization;
+    }
+
+    public record PlatformTenants(boolean allowed, List<TenantDirectory.PlatformTenant> tenants) {}
+    public record TenantStatus(Boolean enabled) {}
+
+    @GetMapping("/platform")
+    public PlatformTenants platformTenants(@RequestHeader(value = "Authorization", required = false) String token) {
+        boolean allowed = authorization.getAdministrators().contains(user(token));
+        return new PlatformTenants(allowed, allowed ? tenants.platformTenants() : List.of());
+    }
+
+    @PutMapping("/platform/{tenant}/status")
+    public void platformStatus(@RequestHeader(value = "Authorization", required = false) String token,
+                               @PathVariable String tenant, @RequestBody TenantStatus status) {
+        String actor = platformAdministrator(token);
+        if (status.enabled() == null) throw new IllegalArgumentException("请选择租户状态");
+        tenants.platformStatus(tenant, actor, status.enabled());
+    }
+
+    @DeleteMapping("/platform/{tenant}")
+    public void deleteTenant(@RequestHeader(value = "Authorization", required = false) String token,
+                             @PathVariable String tenant, @RequestParam String name) {
+        tenants.deleteTenant(tenant, platformAdministrator(token), name);
+    }
+
+    private String platformAdministrator(String token) {
+        String actor = user(token);
+        if (!authorization.getAdministrators().contains(actor)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        return actor;
+    }
     public record TenantInput(String name,boolean enabled) {}
     public record MemberInput(String userId,String role) {}
     public record AcceptInput(String invitationId,String token) {}
@@ -28,9 +68,15 @@ public class TenantController {
         String id=user(token);tenants.member(tenant,id);var account=users.findUserByID(id);
         if(account==null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED);
         tenants.audit(tenant,id,"TENANT_TOKEN_REQUESTED",tenant,"{}");
-        return secret(Map.of("access_token",JwtUtil.GenerateToken(account.getUsername(),Map.of("userId",id,"tenantId",tenant,"tenantVersion",tenants.tokenVersion(tenant,id))),"token_type","Bearer","tenant_id",tenant));
+        return secret(Map.of("access_token",tokens.issue(account, Map.of("tenantId", tenant, "tenantVersion", tenants.tokenVersion(tenant,id))),"token_type","Bearer","tenant_id",tenant));
     }
     @GetMapping("/{tenant}/members") public List<TenantDirectory.Member> members(@RequestHeader(value="Authorization",required=false) String token,@PathVariable String tenant) {return tenants.members(tenant,user(token));}
+    @GetMapping("/{tenant}/invitation-candidates")
+    public ResponseEntity<List<TenantDirectory.InvitationCandidate>> invitationCandidates(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @PathVariable String tenant, @RequestParam(defaultValue = "") String q) {
+        return secret(tenants.invitationCandidates(tenant, user(token), q));
+    }
     @PostMapping("/{tenant}/invitations") public ResponseEntity<?> invite(@RequestHeader(value="Authorization",required=false) String token,@PathVariable String tenant,@RequestBody MemberInput input) {return secret(tenants.invite(tenant,user(token),input.userId(),input.role()));}
     @GetMapping("/{tenant}/invitations") public List<TenantDirectory.PendingInvitation> invitations(@RequestHeader(value="Authorization",required=false) String token,@PathVariable String tenant) {return tenants.invitations(tenant,user(token));}
     @DeleteMapping("/{tenant}/invitations/{invitation}") public void cancelInvitation(@RequestHeader(value="Authorization",required=false) String token,@PathVariable String tenant,@PathVariable String invitation) {tenants.cancelInvitation(tenant,user(token),invitation);}
