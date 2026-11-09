@@ -32,7 +32,7 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 @TestPropertySource(properties={"alisa.oauth.enabled=true","alisa.oauth.issuer=http://localhost","alisa.oauth.allow-loopback-redirects=true",
     "alisa.oauth.applications.demo.[demo\\:target\\:read]=Read targets","alisa.oauth.applications.demo.[demo\\:target\\:delete]=Delete targets"})
 class OAuthFlowTest {
-    @org.springframework.boot.test.context.TestConfiguration @EnableWebSecurity @EnableWebMvc @Import({OAuthConfiguration.class,OAuthPages.class})
+    @org.springframework.boot.test.context.TestConfiguration @EnableWebSecurity @EnableWebMvc @Import({OAuthConfiguration.class,OAuthPages.class,OAuthLoginPage.class})
     static class Config {
         @Bean DataSource dataSource() {
             var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa","");
@@ -116,5 +116,17 @@ class OAuthFlowTest {
             .andExpect(content().string(org.hamcrest.Matchers.containsString("action='/auth/oauth2/authorize'")));
         mvc.perform(post("/auth/oauth/apps/disable").contextPath("/auth").with(user("prefix-owner")).with(csrf()).param("clientId",app.clientId()))
             .andExpect(status().isSeeOther()).andExpect(header().string("Location","/auth/oauth/apps"));
+    }
+    @Test void brandedLoginKeepsCsrfAndContextPath() throws Exception {
+        mvc.perform(get("/auth/login").contextPath("/auth"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control",org.hamcrest.Matchers.containsString("no-store")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("action='/auth/login'")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("name='_csrf'")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("登录你的 Alisa 账号")));
+        mvc.perform(post("/auth/login").contextPath("/auth").param("username","alisa").param("password","invalid"))
+            .andExpect(status().isForbidden());
+        mvc.perform(get("/login").param("error","<script>bad</script>"))
+            .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("<script>bad</script>"))));
     }
 }

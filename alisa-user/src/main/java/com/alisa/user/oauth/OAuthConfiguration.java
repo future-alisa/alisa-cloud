@@ -168,7 +168,7 @@ public class OAuthConfiguration {
         SecurityFilterChain browser(HttpSecurity http,AuthenticationProvider accountAuthentication) throws Exception {
             return http.securityMatcher("/login","/logout","/oauth/**").authenticationProvider(accountAuthentication)
                 .authorizeHttpRequests(c->c.requestMatchers("/login").permitAll().anyRequest().authenticated())
-                .formLogin(c->c.defaultSuccessUrl("/oauth/apps",false)).logout(c->c.logoutSuccessUrl("/login")).build();
+                .formLogin(c->c.loginPage("/login").defaultSuccessUrl("/oauth/apps",false)).logout(c->c.logoutSuccessUrl("/login")).build();
         }
     }
 }
