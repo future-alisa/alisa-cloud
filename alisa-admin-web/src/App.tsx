@@ -35,8 +35,10 @@ import MembersPage from "./pages/Members";
 import ApplicationsPage from "./pages/Applications";
 import PermissionsPage from "./pages/Permissions";
 import AuditPage from "./pages/Audit";
+import PortalServices from "./pages/PortalServices";
 const nav = [
   { to: "/", label: "总览", icon: LayoutDashboard },
+  { to: "/portal-services", label: "门户服务目录", icon: AppWindow },
   { to: "/tenants", label: "租户管理", icon: Building2 },
   { to: "/members", label: "成员管理", icon: Users },
   { to: "/applications", label: "应用与审批", icon: AppWindow },
@@ -294,6 +296,7 @@ function Layout() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Overview key={selectedId} />} />
+            <Route path="/portal-services" element={<PortalServices />} />
             <Route path="/tenants" element={<TenantsPage />} />
             <Route
               path="/settings"
