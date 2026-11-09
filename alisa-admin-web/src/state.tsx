@@ -41,8 +41,10 @@ function useSessionState() {
       "/api/v1/user/signin",
       { method: "POST", body: { username, password } }
     );
-    if (result.code !== 200 || !result.data)
-      throw new Error(result.message || "登录失败，请检查账号和密码");
+    if (result.code !== 200)
+      throw new Error(result.message || "登录失败，请稍后重试");
+    if (typeof result.data !== "string" || !result.data.trim())
+      throw new Error("登录失败，请检查账号和密码");
     const value = {
       username,
       token: result.data,

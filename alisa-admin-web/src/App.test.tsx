@@ -100,6 +100,21 @@ it("logs in and creates a tenant without embedding business scopes in the UI", a
   );
   expect(screen.getByText("租户已创建")).toBeInTheDocument();
 });
+it("shows a credential error when signin returns success without a token", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => respond({ code: 200, message: "成功", data: "" })));
+  render(
+    <MemoryRouter initialEntries={["/login"]}>
+      <SessionProvider>
+        <App />
+      </SessionProvider>
+    </MemoryRouter>
+  );
+  fireEvent.change(screen.getByLabelText("账号"), { target: { value: "alisa" } });
+  fireEvent.change(screen.getByLabelText("密码"), { target: { value: "invalid-password" } });
+  fireEvent.click(screen.getByRole("button", { name: /登录控制台/ }));
+  expect(await screen.findByText("登录失败，请检查账号和密码")).toBeInTheDocument();
+  expect(sessionStorage.getItem("alisa.admin.session")).toBeNull();
+});
 it("shows a permission explanation for ordinary members without fetching admin policies", async () => {
   sessionStorage.setItem("alisa.admin.session", JSON.stringify(session));
   const fetch = vi.fn((path: string) =>
