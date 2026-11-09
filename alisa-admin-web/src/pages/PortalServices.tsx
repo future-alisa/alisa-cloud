@@ -1,5 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 
+import { ArrowUpRight, Network, Plus } from "lucide-react";
+import { Alert, Badge, Button, ConfirmDialog, Empty, FormFooter, Loading, Modal, PageTitle } from "../ui";
+
 import { NetworkManager, type NetworkSettings } from "./PortalNetworks";
 
 export type Service = {
@@ -37,6 +40,8 @@ export default function PortalServices() {
   const [catalog, setCatalog] = useState<Catalog>();
   const [draft, setDraft] = useState<Service>();
   const [error, setError] = useState("");
+  const [removing, setRemoving] = useState<Service>();
+  const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showNetworks, setShowNetworks] = useState(false);
 
@@ -60,22 +65,13 @@ export default function PortalServices() {
   }, []);
 
   async function update(method: "POST" | "PUT" | "DELETE", id: string, fields?: FormData) {
-    if (!session?.canManage || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const next = await portalRequest<Catalog>(id ? "services/" + encodeURIComponent(id) : "services", {
-        method,
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken },
-        body: fields ? JSON.stringify(Object.fromEntries(fields)) : undefined,
-      });
-      setCatalog(next);
-      setDraft(undefined);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "无法保存服务目录");
-    } finally {
-      setBusy(false);
-    }
+    if (!session?.canManage) throw new Error("当前账号没有门户管理权限");
+    const next = await portalRequest<Catalog>(id ? "services/" + encodeURIComponent(id) : "services", {
+      method,
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken },
+      body: fields ? JSON.stringify(Object.fromEntries(fields)) : undefined,
+    });
+    setCatalog(next);
   }
 
   async function saveNetwork(settings: NetworkSettings) {
@@ -88,63 +84,94 @@ export default function PortalServices() {
     setCatalog(next);
   }
 
-  function save(event: FormEvent<HTMLFormElement>) {
+  function editService(service: Service) {
+    setFormError("");
+    setDraft(service);
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (draft) void update(draft.id ? "PUT" : "POST", draft.id, new FormData(event.currentTarget));
+    if (!draft || busy) return;
+    setBusy(true);
+    setFormError("");
+    try {
+      await update(draft.id ? "PUT" : "POST", draft.id, new FormData(event.currentTarget));
+      setDraft(undefined);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "无法保存服务");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return <>
-    <section className="panel">
-      <div className="panel-heading">
-        <div><h2>门户服务目录</h2><p>管理门户上的服务入口、展示范围和访问要求。</p></div>
-        <a className="button" href="/">返回门户</a>
-      </div>
-      {error && <p role="alert">{error}</p>}
-      {!session && !error && <p role="status">正在确认门户管理权限…</p>}
-      {session && !session.authenticated && <p><a href="/api/auth/login?next=admin-services">使用 Alisa 账号继续</a>，确认门户服务目录管理权限。</p>}
-      {session?.authenticated && !session.canManage && <p role="status">当前账号没有门户服务目录的管理权限。</p>}
-      {session?.canManage && !catalog && !error && <p role="status">正在加载服务目录…</p>}
-      {catalog && <>
-        <button className="button primary" disabled={busy} onClick={() => setDraft(emptyService)}>登记服务</button>
-        {catalog.networkSettings && <button className="button" onClick={() => setShowNetworks(value => !value)}>
-          {showNetworks ? "收起网络设置" : "网络设置"}
-        </button>}
-        {!catalog.services.length && <p>还没有登记服务。</p>}
-        {catalog.services.map(service => <div className="panel-heading" key={service.id}>
-          <div><h3>{service.name}</h3><p>{service.category || "未分类"} · {service.visibility === "public" ? "公开展示" : "仅管理员可见"}</p></div>
-          <div>
-            <button className="button" disabled={busy} onClick={() => setDraft(service)}>编辑 {service.name}</button>
-            <button className="button" disabled={busy} onClick={() => {
-              if (window.confirm("从门户目录移除 " + service.name + "？")) void update("DELETE", service.id);
-            }}>移除</button>
-          </div>
-        </div>)}
-      </>}
-    </section>
-    {showNetworks && catalog?.networkSettings && <NetworkManager settings={catalog.networkSettings}
-      services={catalog.services} save={saveNetwork} editService={setDraft}/>}
-    {draft && <section className="panel settings-panel">
-      <h2>{draft.id ? "编辑服务" : "登记服务"}</h2>
-      <form key={draft.id || "new"} onSubmit={save}>
-        <label>服务名称<input name="name" defaultValue={draft.name} required maxLength={80}/></label>
-        <label>分类<input name="category" defaultValue={draft.category} maxLength={80}/></label>
-        <label>外网地址<input name="externalUrl" type="url" defaultValue={draft.externalUrl} maxLength={2048}/></label>
-        <label>内网地址<input name="internalUrl" type="url" defaultValue={draft.internalUrl} maxLength={2048}/></label>
-        <label>网络区域<select name="networkId" defaultValue={draft.networkId}>
-          <option value="">未归类</option>
-          {catalog?.networkSettings?.networks.map(network => <option key={network.id} value={network.id}>{network.name}</option>)}
-        </select></label>
-        <label>门户展示范围<select name="visibility" defaultValue={draft.visibility}>
-          <option value="private">仅管理员可见</option><option value="public">公开展示</option>
-        </select></label>
-        <label>服务访问要求<select name="accessRequirement" defaultValue={draft.accessRequirement}>
-          <option value="account">需要账号或权限</option><option value="none">可直接访问</option>
-        </select></label>
-        <label>公开说明<textarea name="publicDescription" defaultValue={draft.publicDescription} maxLength={500}/></label>
-        <label>内部说明<textarea name="description" defaultValue={draft.description} maxLength={500}/></label>
-        <button className="button" type="button" disabled={busy} onClick={() => setDraft(undefined)}>取消</button>
-        <button className="button primary" disabled={busy}>{busy ? "保存中…" : "保存服务"}</button>
-      </form>
+    <PageTitle title="门户服务目录" description="管理门户上的服务入口、展示范围和访问要求。"
+      actions={<>
+        <a className="button secondary" href="/">返回门户 <ArrowUpRight size={16}/></a>
+        {catalog?.networkSettings && <Button icon={<Network size={16}/>} aria-pressed={showNetworks}
+          onClick={() => setShowNetworks(value => !value)}>
+          {showNetworks ? "返回服务列表" : "网络设置"}
+        </Button>}
+        {catalog && <Button variant="primary" icon={<Plus size={16}/>}
+          onClick={() => editService(emptyService)}>登记服务</Button>}
+      </>}/>
+    <Alert>{error}</Alert>
+    {!catalog && !error && (!session || (session.authenticated && session.canManage)) && <Loading/>}
+    {session && !session.authenticated && <section className="panel">
+      <Empty title="请确认门户身份" description="使用 Alisa 账号继续管理门户服务目录。"
+        action={<a className="button primary" href="/api/auth/login?next=admin-services">使用 Alisa 账号继续</a>}/>
     </section>}
+    {session?.authenticated && !session.canManage && <section className="panel">
+      <Empty title="没有管理权限" description="当前账号没有门户服务目录的管理权限。"/>
+    </section>}
+    {catalog && !showNetworks && <section className="panel">
+      <div className="panel-heading"><h2>已登记服务</h2><span className="muted">{catalog.services.length} 项</span></div>
+      {!catalog.services.length ? <Empty title="还没有登记服务" description="登记服务后，可以配置访问地址和展示范围。"/> :
+        <div className="table-scroll"><table>
+          <thead><tr><th scope="col">服务名称</th><th scope="col">分类</th><th scope="col">门户展示</th>
+            <th scope="col">访问要求</th><th scope="col" className="align-right">操作</th></tr></thead>
+          <tbody>{catalog.services.map(service => <tr key={service.id}>
+            <td><strong>{service.name}</strong></td>
+            <td>{service.category || "未分类"}</td>
+            <td><Badge tone={service.visibility === "public" ? "green" : "neutral"}>
+              {service.visibility === "public" ? "公开展示" : "仅管理员可见"}
+            </Badge></td>
+            <td>{service.accessRequirement === "none" ? "可直接访问" : "需要账号或权限"}</td>
+            <td><div className="row-actions">
+              <Button variant="ghost" aria-label={`编辑 ${service.name}`} onClick={() => editService(service)}>编辑</Button>
+              <Button variant="ghost" aria-label={`移除 ${service.name}`} onClick={() => setRemoving(service)}>移除</Button>
+            </div></td>
+          </tr>)}</tbody>
+        </table></div>}
+    </section>}
+    {showNetworks && catalog?.networkSettings && <NetworkManager settings={catalog.networkSettings}
+      services={catalog.services} save={saveNetwork} editService={editService}/>}
+    {removing && <ConfirmDialog title="移除服务" description={`将「${removing.name}」从门户目录移除。`}
+      label="移除服务" danger onClose={() => setRemoving(undefined)}
+      onConfirm={() => update("DELETE", removing.id)}/>}
+    {draft && <Modal title={draft.id ? "编辑服务" : "登记服务"} onClose={() => setDraft(undefined)} busy={busy} wide>
+      <form key={draft.id || "new"} onSubmit={save}>
+        <Alert>{formError}</Alert>
+        <div className="form-grid">
+          <label>服务名称<input name="name" defaultValue={draft.name} required maxLength={80}/></label>
+          <label>分类<input name="category" defaultValue={draft.category} maxLength={80}/></label>
+          <label>外网地址<input name="externalUrl" type="url" defaultValue={draft.externalUrl} maxLength={2048}/></label>
+          <label>内网地址<input name="internalUrl" type="url" defaultValue={draft.internalUrl} maxLength={2048}/></label>
+          <label>网络区域<select name="networkId" defaultValue={draft.networkId}>
+            <option value="">未归类</option>
+            {catalog?.networkSettings?.networks.map(network => <option key={network.id} value={network.id}>{network.name}</option>)}
+          </select></label>
+          <label>门户展示范围<select name="visibility" defaultValue={draft.visibility}>
+            <option value="private">仅管理员可见</option><option value="public">公开展示</option>
+          </select></label>
+          <label>服务访问要求<select name="accessRequirement" defaultValue={draft.accessRequirement}>
+            <option value="account">需要账号或权限</option><option value="none">可直接访问</option>
+          </select></label>
+          <label>公开说明<textarea name="publicDescription" defaultValue={draft.publicDescription} maxLength={500}/></label>
+          <label>内部说明<textarea name="description" defaultValue={draft.description} maxLength={500}/></label>
+        </div>
+        <FormFooter onClose={() => setDraft(undefined)} pending={busy} label="保存服务"/>
+      </form>
+    </Modal>}
   </>;
 }
