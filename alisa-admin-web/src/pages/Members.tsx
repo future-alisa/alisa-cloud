@@ -449,17 +449,17 @@ function MemberDialog({
         ) : (
           <>
             <label>
-              用户 ID
+              {kind === "invite" ? "账号邮箱或用户 ID" : "用户 ID"}
               <input
                 autoFocus
                 required
                 readOnly={kind === "role"}
-                placeholder="粘贴被邀请用户的 ID"
+                placeholder="输入对方的账号邮箱或用户 ID"
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
               />
               {kind === "invite" && (
-                <small>用户可以在自己的「租户设置」中复制用户 ID。</small>
+                <small>邮箱必须已绑定 Alisa 账号。新用户请到「组织与用户」开通账号。</small>
               )}
             </label>
             <label>

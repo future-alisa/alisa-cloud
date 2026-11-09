@@ -31,3 +31,18 @@ CREATE TABLE alisa_tenant_audit (
 CREATE INDEX idx_tenant_audit_time ON alisa_tenant_audit(tenant_id,created_at,id);
 CREATE INDEX idx_tenant_member_user ON alisa_tenant_member(user_id,tenant_id);
 CREATE INDEX idx_oauth_tenant ON alisa_oauth_application(tenant_id,kind,approval);
+
+CREATE TABLE alisa_organization (
+ id varchar(64) PRIMARY KEY, name varchar(100) NOT NULL, owner_id varchar(100) NOT NULL
+);
+CREATE TABLE alisa_organization_tenant (
+ tenant_id varchar(64) PRIMARY KEY, organization_id varchar(64) NOT NULL,
+ FOREIGN KEY(tenant_id) REFERENCES alisa_tenant(id),
+ FOREIGN KEY(organization_id) REFERENCES alisa_organization(id)
+);
+CREATE TABLE alisa_organization_account (
+ id varchar(64) PRIMARY KEY, organization_id varchar(64) NOT NULL,
+ username varchar(45) NOT NULL, email varchar(255) NOT NULL,
+ user_id varchar(100) UNIQUE, activation_hash varchar(64), expires_at timestamp NULL,
+ FOREIGN KEY(organization_id) REFERENCES alisa_organization(id)
+);

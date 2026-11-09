@@ -35,10 +35,12 @@ import MembersPage from "./pages/Members";
 import ApplicationsPage from "./pages/Applications";
 import PermissionsPage from "./pages/Permissions";
 import AuditPage from "./pages/Audit";
+import Organizations, { ActivateOrganizationAccount } from "./pages/Organizations";
 import PortalServices from "./pages/PortalServices";
 const nav = [
   { to: "/", label: "总览", icon: LayoutDashboard },
   { to: "/portal-services", label: "门户服务目录", icon: AppWindow },
+  { to: "/organizations", label: "组织与用户", icon: Building2 },
   { to: "/tenants", label: "租户管理", icon: Building2 },
   { to: "/members", label: "成员管理", icon: Users },
   { to: "/applications", label: "应用与审批", icon: AppWindow },
@@ -297,6 +299,7 @@ function Layout() {
           <Routes>
             <Route path="/" element={<Overview key={selectedId} />} />
             <Route path="/portal-services" element={<PortalServices />} />
+            <Route path="/organizations" element={<Organizations />} />
             <Route path="/tenants" element={<TenantsPage />} />
             <Route
               path="/settings"
@@ -364,6 +367,7 @@ export default function App() {
   return (
     <ToastProvider>
       <Routes>
+        <Route path="/activate-account" element={<ActivateOrganizationAccount />} />
         <Route
           path="/login"
           element={session ? <Navigate to="/" replace /> : <Login />}

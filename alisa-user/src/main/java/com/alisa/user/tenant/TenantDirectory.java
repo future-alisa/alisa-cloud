@@ -45,6 +45,18 @@ public class TenantDirectory {
     private void lock(String tenant) {
         if(jdbc.queryForList("select id from alisa_tenant where id=? for update",String.class,tenant).isEmpty()) throw denied();
     }
+    @Transactional public void lockOwnedTenant(String tenant, String actor) {
+        lock(tenant);
+        if (!"OWNER".equals(role(tenant, actor))) throw denied();
+    }
+    @Transactional public void assignManagedMember(String tenant, String actor, String user) {
+        lockOwnedTenant(tenant, actor);
+        if (jdbc.queryForObject("select count(*) from alisa_tenant_member where tenant_id=? and user_id=?", Integer.class, tenant, user)==0) {
+            jdbc.update("insert into alisa_tenant_member(tenant_id,user_id,role,token_version) values(?,?,'MEMBER',?)",
+                tenant, user, UUID.randomUUID().toString());
+            audit(tenant, actor, "MANAGED_MEMBER_ASSIGNED", user, "{}");
+        }
+    }
     @Transactional public String create(String user,String name) {
         validateName(name); if(users.findUserByID(user)==null) throw denied();
         String id=UUID.randomUUID().toString();jdbc.update("insert into alisa_tenant(id,name,enabled,token_version) values(?,?,true,?)",id,name.trim(),UUID.randomUUID().toString());
@@ -67,7 +79,10 @@ public class TenantDirectory {
     @Transactional public Invitation invite(String tenant,String actor,String user,String role) {
         lock(tenant);admin(tenant,actor);validRole(role);
         if("ADMIN".equals(role)) owner(tenant,actor);
-        if(users.findUserByID(user)==null) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"用户不存在");
+        if (user == null || user.isBlank() || user.length() > 255) throw new IllegalArgumentException("请输入用户 ID 或邮箱");
+        var account = user.contains("@") ? users.findUserByEmail(user.trim().toLowerCase(Locale.ROOT)) : users.findUserByID(user.trim());
+        if (account == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在");
+        user = account.getId();
         String id=UUID.randomUUID().toString(),token=UUID.randomUUID()+"."+UUID.randomUUID();
         jdbc.update("insert into alisa_tenant_invitation(id,tenant_id,user_id,role,token_hash,expires_at) values(?,?,?,?,?,?)",id,tenant,user,role,hash(token),Timestamp.from(Instant.now().plus(Duration.ofDays(2))));
         audit(tenant,actor,"MEMBER_INVITED",user,"{}");return new Invitation(id,token);

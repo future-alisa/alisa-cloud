@@ -40,7 +40,7 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
     "alisa.oauth.applications.demo.[demo\\:target\\:read]=Read","alisa.oauth.applications.demo.[demo\\:target\\:delete]=Delete"})
 class TenantFlowTest {
     @org.springframework.boot.test.context.TestConfiguration @EnableWebSecurity @EnableWebMvc @EnableTransactionManagement(proxyTargetClass=true)
-    @Import({OAuthConfiguration.class,TenantConfiguration.class,TenantController.class,TenantErrors.class,TenantPages.class})
+    @Import({OAuthConfiguration.class,TenantConfiguration.class,TenantController.class,OrganizationController.class,TenantErrors.class,TenantPages.class})
     static class Config {
         @Bean DataSource dataSource() {
             var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa","");
@@ -52,12 +52,51 @@ class TenantFlowTest {
         @Bean UserMapper users() {
             var users=mock(UserMapper.class);when(users.findUserByID(anyString())).thenAnswer(call->{var user=new com.alisa.user.entity.User();user.setId(call.getArgument(0));user.setUsername(call.getArgument(0));return user;});return users;
         }
+        @Bean com.alisa.user.service.IdentityService identityService() {return mock(com.alisa.user.service.IdentityService.class);}
+        @Bean com.alisa.user.service.VerificationCodeService verificationCodes() {return mock(com.alisa.user.service.VerificationCodeService.class);}
         @Bean AuthorizationProperties authorizationProperties() {var p=new AuthorizationProperties();p.setApplications(Map.of("demo","tenant"));return p;}
         @Bean AuthorizationEngine engine(List<AuthorizationProvider> providers) {return new AuthorizationEngine(providers,Map.of("demo","tenant"));}
         @Bean AccessTokenService accessTokenService() {new JwtUtil().setJwtProperties(new JwtProperties());return new AccessTokenService();}
         @Bean AuthorizationController authorizationController(AuthorizationEngine engine,AuthorizationProperties props,AccessTokenService tokens) {return new AuthorizationController(engine,props,tokens);}
     }
     @Autowired TenantDirectory tenants;@Autowired OAuthApplications apps;@Autowired AccessTokenService tokens;
+    @Autowired OrganizationDirectory organizations;
+    @Autowired com.alisa.user.service.IdentityService identity;
+    @Autowired com.alisa.user.service.VerificationCodeService codes;
+
+    @Test void managedAccountRequiresEmailVerificationAndCannotCrossOrganizations() throws Exception {
+        String owner = "directory-owner";
+        var organization = organizations.create(owner, "Directory A");
+        var other = organizations.create("other-owner", "Directory B");
+        String tenant = tenants.create(owner, "Directory A workspace");
+        String unrelated = tenants.create(owner, "Unlinked workspace");
+
+        mvc.perform(get("/api/v1/user/organizations")).andExpect(status().isUnauthorized());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.accounts(organization.id(), "other-owner"));
+        organizations.link(organization.id(), owner, tenant);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.link(other.id(), "other-owner", tenant));
+
+        var link = organizations.issue(organization.id(), owner, "managed-user", "managed@example.org");
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.activate(link.id(), link.token(), "Test password 42", "000000"));
+        verify(identity, never()).register(any());
+        organizations.sendActivationCode(link.id(), link.token());
+        verify(codes).sendActivation("managed@example.org", link.id());
+
+        when(codes.consumeActivation(link.id(), "123456")).thenReturn(true);
+        when(identity.register(any())).thenReturn("managed-user-id");
+        organizations.activate(link.id(), link.token(), "Test password 42", "123456");
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.activate(link.id(), link.token(), "Test password 42", "123456"));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> organizations.assign(organization.id(), owner, link.id(), unrelated));
+        organizations.assign(organization.id(), owner, link.id(), tenant);
+        organizations.assign(organization.id(), owner, link.id(), tenant);
+        assertEquals("MEMBER", tenants.role(tenant, "managed-user-id"));
+        assertEquals(1, tenants.members(tenant, owner).stream().filter(m -> m.userId().equals("managed-user-id")).count());
+    }
     @Autowired WebApplicationContext context;
     MockMvc mvc;ObjectMapper json=new ObjectMapper();
     @BeforeEach void setup() {mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();}
