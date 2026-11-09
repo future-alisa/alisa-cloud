@@ -94,10 +94,24 @@ spec:
                 name: alisa-jwt
             - secretRef:
                 name: alisa-user-db
+            - secretRef:
+                name: alisa-portal-oauth-enablement
+                optional: true
+          env:
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: optional:file:/etc/alisa/portal-oauth.yaml
+          volumeMounts:
+            - name: portal-oauth-config
+              mountPath: /etc/alisa
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/v1/user/health
               port: http
+      volumes:
+        - name: portal-oauth-config
+          configMap:
+            name: alisa-portal-oauth-config
 ---
 apiVersion: v1
 kind: Service
