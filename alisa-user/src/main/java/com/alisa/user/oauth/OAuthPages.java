@@ -30,11 +30,11 @@ public class OAuthPages {
     private ResponseEntity<String> page(String title,String content) {
         return ResponseEntity.ok().contentType(new MediaType("text","html",java.nio.charset.StandardCharsets.UTF_8)).cacheControl(CacheControl.noStore())
             .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
-            .body("<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+escape(title)+"</title><style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:16px;color:#243346}section{padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:8px}button{cursor:pointer}code{overflow-wrap:anywhere}a{color:#2563ab}</style><h1>"+escape(title)+"</h1><nav><a href='/oauth/apps'>我的应用</a> · <a href='/oauth/connections'>已授权应用</a></nav>"+content+"</html>");
+            .body(OAuthBrowserPaths.html("<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+escape(title)+"</title><style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:16px;color:#243346}section{padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:8px}button{cursor:pointer}code{overflow-wrap:anywhere}a{color:#2563ab}</style><h1>"+escape(title)+"</h1><nav><a href='/oauth/apps'>我的应用</a> · <a href='/oauth/connections'>已授权应用</a></nav>"+content+"</html>"));
     }
     @GetMapping("/apps")
     public ResponseEntity<String> applications(Principal user,HttpServletRequest request) {
-        if(tenantMode) return ResponseEntity.status(303).location(java.net.URI.create("/oauth/tenants")).body("");
+        if(tenantMode) return ResponseEntity.status(303).location(java.net.URI.create(OAuthBrowserPaths.path("/oauth/tenants"))).body("");
         StringBuilder html=new StringBuilder();
         for(var app:apps.owned(user.getName())) {
             html.append("<section><h2>").append(escape(app.name())).append("</h2><code>").append(escape(app.clientId())).append("</code><p>").append(escape(app.applicationId())).append(app.enabled()?" · 已启用":" · 已停用").append("</p>");
@@ -58,7 +58,7 @@ public class OAuthPages {
     }
     @PostMapping("/apps/disable")
     public ResponseEntity<Void> disable(Principal user,@RequestParam String clientId) {
-        apps.disable(user.getName(),clientId); return ResponseEntity.status(303).location(java.net.URI.create("/oauth/apps")).build();
+        apps.disable(user.getName(),clientId); return ResponseEntity.status(303).location(java.net.URI.create(OAuthBrowserPaths.path("/oauth/apps"))).build();
     }
     @GetMapping("/connections")
     public ResponseEntity<String> connections(Principal user,HttpServletRequest request) {
@@ -68,7 +68,7 @@ public class OAuthPages {
     }
     @PostMapping("/connections/revoke")
     public ResponseEntity<Void> revoke(Principal user,@RequestParam String clientId) {
-        apps.revoke(user.getName(),clientId); return ResponseEntity.status(303).location(java.net.URI.create("/oauth/connections")).build();
+        apps.revoke(user.getName(),clientId); return ResponseEntity.status(303).location(java.net.URI.create(OAuthBrowserPaths.path("/oauth/connections"))).build();
     }
     @GetMapping("/consent")
     public ResponseEntity<String> consent(Principal user,HttpServletRequest request,@RequestParam("client_id") String clientId,

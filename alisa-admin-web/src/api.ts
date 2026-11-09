@@ -12,7 +12,9 @@ export function createApi(token: string, onUnauthorized: () => void) {
     if (!path.startsWith("/api/")) throw new Error("Invalid API path");
     let response: Response;
     try {
-      response = await fetch(path, {
+      const base = import.meta.env.BASE_URL;
+      if (!base.startsWith("/") || base.startsWith("//")) throw new Error("Invalid application base");
+      response = await fetch(base.replace(/\/$/, "") + path, {
         method: options.method || "GET",
         headers: {
           Accept: "application/json",

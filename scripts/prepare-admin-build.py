@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""Prepare an internal-Registry build from a pinned public GitHub revision."""
+import argparse,json,pathlib,subprocess
+root=pathlib.Path(__file__).resolve().parents[1]
+p=argparse.ArgumentParser();p.add_argument('--revision',required=True);p.add_argument('--output',required=True,type=pathlib.Path);args=p.parse_args()
+if len(args.revision)!=40 or any(x not in '0123456789abcdef' for x in args.revision):raise SystemExit('Exact revision required')
+c=json.loads((root/'deploy/admin/build/config.json').read_text());tag='src-'+args.revision[:12]
+items=[{'apiVersion':'v1','kind':'PersistentVolumeClaim','metadata':{'name':'alisa-admin-build-cache','namespace':'alisa-infra','annotations':{'argocd.argoproj.io/sync-options':'Prune=false,Delete=false'}},'spec':{'accessModes':['ReadWriteOnce'],'resources':{'requests':{'storage':'3Gi'}}}}]
+items.append({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'alisa-admin-build-scripts','namespace':'alisa-infra'},'data':{name:(root/'deploy/admin/build'/name).read_text() for name in ['source.js','build-api.sh','build-web.sh']}})
+for component in ['web','api']:
+ proxy=[{'name':k,'value':v} for k,v in {'HTTP_PROXY':c['proxy'],'HTTPS_PROXY':c['proxy'],'NO_PROXY':'localhost,127.0.0.1,.svc,.cluster.local,.kind.internal,registry.kind.internal,registry.kind.internal:5000'}.items()]
+ mounts=[{'name':'workspace','mountPath':'/workspace'},{'name':'scripts','mountPath':'/scripts','readOnly':True}]
+ source={'name':'source','image':c['nodeImage'],'command':['node','/scripts/source.js'],'env':proxy+[{'name':'SOURCE_REVISION','value':args.revision},{'name':'COMPONENT','value':component}],'volumeMounts':mounts}
+ build={'name':'build','image':c['nodeImage'] if component=='web' else c['mavenImage'],'command':['sh','/scripts/build-'+component+'.sh'],'env':proxy,'resources':{'requests':{'cpu':'250m','memory':'256Mi'},'limits':{'cpu':'2','memory':'2Gi'}},'volumeMounts':mounts}
+ publish={'name':'publish','image':c['kanikoImage'],'args':['--context=dir:///workspace/runtime-'+component,'--dockerfile=Dockerfile','--destination='+c['registry']+'/alisa-admin-'+component+':'+tag,'--skip-tls-verify-registry='+c['registry'],'--push-retry=3','--cache=false','--reproducible'],'volumeMounts':[{'name':'workspace','mountPath':'/workspace'},{'name':'registry','mountPath':'/kaniko/.docker','readOnly':True}],'resources':{'requests':{'cpu':'100m','memory':'128Mi'},'limits':{'cpu':'1','memory':'512Mi'}}}
+ items.append({'apiVersion':'batch/v1','kind':'Job','metadata':{'name':'alisa-admin-build-'+component+'-'+args.revision[:12],'namespace':'alisa-infra'},'spec':{'backoffLimit':0,'activeDeadlineSeconds':2400,'ttlSecondsAfterFinished':7200,'template':{'spec':{'automountServiceAccountToken':False,'restartPolicy':'Never','dnsPolicy':'Default','imagePullSecrets':[{'name':c['registrySecret']}],'initContainers':[source,build],'containers':[publish],'volumes':[{'name':'workspace','persistentVolumeClaim':{'claimName':'alisa-admin-build-cache'}},{'name':'scripts','configMap':{'name':'alisa-admin-build-scripts'}},{'name':'registry','secret':{'secretName':c['registrySecret'],'items':[{'key':'.dockerconfigjson','path':'config.json'}]}}]}}}})
+args.output.mkdir(parents=True,exist_ok=True);(args.output/'resources.json').write_text(json.dumps(items));(args.output/'sync.json').write_text(json.dumps({'manifests':[json.dumps(x) for x in items],'prune':False}));(args.output/'release.json').write_text(json.dumps({'source':args.revision,'tag':tag,'registry':c['registry']}));print('Prepared',tag)

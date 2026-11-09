@@ -1,0 +1,8 @@
+{
+  "registry": "registry.kind.internal:5000",
+  "registrySecret": "alisa-admin-registry-auth",
+  "proxy": "http://192.168.1.112:4067",
+  "nodeImage": "registry.kind.internal:5000/library/node:22-alpine",
+  "mavenImage": "registry.kind.internal:5000/build/maven@sha256:82e47241881f23ad774f5db8829efca15758e8fdb5b1d64ea9f8d6420a85068e",
+  "kanikoImage": "registry.kind.internal:5000/build/kaniko@sha256:a9abdacefb0d5c65d32b51ac19f85b66373b2ad5d72d99e77ff81ca39404090c"
+}
