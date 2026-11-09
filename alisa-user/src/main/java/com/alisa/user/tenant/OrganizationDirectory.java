@@ -38,9 +38,21 @@ public class OrganizationDirectory {
     }
 
     public record Organization(String id, String name) {}
-    public record Account(String id, String username, String email, String userId, Timestamp expiresAt) {}
+    public record Account(String id, String username, String email, String userId, Timestamp expiresAt, String status, Timestamp restoreUntil) {}
+    public enum AccountAction { RESET_PASSWORD, SUSPEND, RESUME, DELETE, RESTORE }
+    private static final Duration RESTORE_WINDOW = Duration.ofDays(30);
+
     public record Activation(String id, String token) {}
     public record LinkedTenant(String id, String name) {}
+
+    public String activeSessionVersion(String userId) {
+        var versions = jdbc.query("select account_status,session_version from alisa_organization_account where user_id=?",
+            (rs, row) -> {
+                if (!"ACTIVE".equals(rs.getString(1))) throw new ResponseStatusException(UNAUTHORIZED, "账号已停用");
+                return rs.getString(2);
+            }, userId);
+        return versions.isEmpty() ? "0" : versions.get(0);
+    }
 
     public List<Organization> list(String actor) {
         return jdbc.query("select id,name from alisa_organization where owner_id=? order by name,id",
@@ -64,8 +76,14 @@ public class OrganizationDirectory {
 
     public List<Account> accounts(String organization, String actor) {
         owner(organization, actor, false);
-        return jdbc.query("select id,username,email,user_id,expires_at from alisa_organization_account where organization_id=? order by username,id",
-            (rs, row) -> new Account(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getTimestamp(5)), organization);
+        return jdbc.query("select id,username,email,user_id,expires_at,account_status,deleted_at from alisa_organization_account where organization_id=? order by username,id",
+            (rs, row) -> {
+                var deleted = rs.getTimestamp(7);
+                String user = rs.getString(4);
+                return new Account(rs.getString(1), rs.getString(2), rs.getString(3), user, rs.getTimestamp(5),
+                    user == null ? "PENDING" : rs.getString(6),
+                    deleted == null ? null : Timestamp.from(deleted.toInstant().plus(RESTORE_WINDOW)));
+            }, organization);
     }
 
     @Transactional
@@ -96,6 +114,48 @@ public class OrganizationDirectory {
             throw new ResponseStatusException(NOT_FOUND, "待激活账号不存在");
     }
 
+    @Transactional
+    public void manage(String organization, String actor, String account, AccountAction action) {
+        owner(organization, actor, true);
+        var targets = jdbc.query("""
+            select user_id,email,account_status,deleted_at from alisa_organization_account
+            where organization_id=? and id=? and user_id is not null for update
+            """, (rs, row) -> new ManagedTarget(rs.getString(1), rs.getString(2), rs.getString(3), rs.getTimestamp(4)),
+            organization, account);
+        if (targets.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "已激活的组织账号不存在");
+        var target = targets.get(0);
+        if (actor.equals(target.userId()) && action != AccountAction.RESET_PASSWORD)
+            throw new ResponseStatusException(CONFLICT, "无法对自己的账号执行此操作");
+        boolean allowed = switch (action) {
+            case RESET_PASSWORD, SUSPEND -> "ACTIVE".equals(target.status());
+            case RESUME -> "SUSPENDED".equals(target.status());
+            case DELETE -> !"DELETED".equals(target.status());
+            case RESTORE -> target.deletedAt() != null &&
+                target.deletedAt().toInstant().plus(RESTORE_WINDOW).isAfter(Instant.now());
+        };
+        if (!allowed) throw new ResponseStatusException(CONFLICT, "当前账号状态不允许此操作");
+        if (action == AccountAction.RESET_PASSWORD) {
+            try {
+                codes.send(target.email());
+            } catch (MailException e) {
+                throw new ResponseStatusException(SERVICE_UNAVAILABLE, "验证码邮件暂时发送失败，请稍后重试");
+            }
+            return;
+        }
+        String status = switch (action) {
+            case SUSPEND -> "SUSPENDED";
+            case DELETE -> "DELETED";
+            default -> "ACTIVE";
+        };
+        jdbc.update("""
+            update alisa_organization_account set account_status=?, deleted_at=?, session_version=session_version+1
+            where id=? and organization_id=?
+            """, status, action == AccountAction.DELETE ? Timestamp.from(Instant.now()) : null, account, organization);
+        jdbc.update("delete from oauth2_authorization where principal_name=?", target.userId());
+    }
+
+    private record ManagedTarget(String userId, String email, String status, Timestamp deletedAt) {}
+
     public void sendActivationCode(String account, String token) {
         String email = pending(account, token, false).email();
         try {
@@ -108,7 +168,7 @@ public class OrganizationDirectory {
     private Account pending(String account, String token, boolean lock) {
         if (account == null || token == null || token.length() != 73) throw invalidActivation();
         var matches = jdbc.query("select id,username,email,user_id,expires_at from alisa_organization_account where id=? and activation_hash=? and user_id is null and expires_at>?" + (lock ? " for update" : ""),
-            (rs, row) -> new Account(rs.getString(1), rs.getString(2), rs.getString(3), null, rs.getTimestamp(5)),
+            (rs, row) -> new Account(rs.getString(1), rs.getString(2), rs.getString(3), null, rs.getTimestamp(5), "PENDING", null),
             account, hash(token), Timestamp.from(Instant.now()));
         if (matches.isEmpty()) throw invalidActivation();
         return matches.get(0);
@@ -157,7 +217,7 @@ public class OrganizationDirectory {
         if (jdbc.queryForList("select tenant_id from alisa_organization_tenant where tenant_id=? and organization_id=?",
             String.class, tenant, organization).isEmpty())
             throw new ResponseStatusException(FORBIDDEN, "租户未关联当前组织");
-        var ids = jdbc.queryForList("select user_id from alisa_organization_account where id=? and organization_id=? and user_id is not null",
+        var ids = jdbc.queryForList("select user_id from alisa_organization_account where id=? and organization_id=? and user_id is not null and account_status='ACTIVE'",
             String.class, account, organization);
         if (ids.isEmpty()) throw new ResponseStatusException(NOT_FOUND, "已激活的组织账号不存在");
         tenants.assignManagedMember(tenant, actor, ids.get(0));

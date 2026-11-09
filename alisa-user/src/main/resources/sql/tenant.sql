@@ -46,3 +46,7 @@ CREATE TABLE alisa_organization_account (
  user_id varchar(100) UNIQUE, activation_hash varchar(64), expires_at timestamp NULL,
  FOREIGN KEY(organization_id) REFERENCES alisa_organization(id)
 );
+
+ALTER TABLE alisa_organization_account ADD account_status varchar(12) NOT NULL DEFAULT 'ACTIVE';
+ALTER TABLE alisa_organization_account ADD session_version bigint NOT NULL DEFAULT 0;
+ALTER TABLE alisa_organization_account ADD deleted_at timestamp NULL;

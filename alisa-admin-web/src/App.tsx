@@ -18,7 +18,6 @@ import {
   LogOut,
   Menu,
   ScrollText,
-  Settings2,
   ShieldCheck,
   Users,
   X,
@@ -29,14 +28,16 @@ import {
   useSession,
   useTenants,
 } from "./state";
-import { Alert, Button, Empty, ErrorState, Loading, ToastProvider } from "./ui";
+import { Alert, Button, Empty, ErrorState, Loading, ToastProvider, useToast } from "./ui";
 import { Overview, TenantsPage, SettingsPage } from "./pages/Tenants";
 import MembersPage from "./pages/Members";
 import ApplicationsPage from "./pages/Applications";
 import PermissionsPage from "./pages/Permissions";
 import AuditPage from "./pages/Audit";
 import Organizations, { ActivateOrganizationAccount } from "./pages/Organizations";
+import { ChangePassword, ResetPassword } from "./pages/AccountPassword";
 import PortalServices from "./pages/PortalServices";
+import WorkspacePicker from "./WorkspacePicker";
 const nav = [
   { to: "/", label: "总览", icon: LayoutDashboard },
   { to: "/organizations", label: "组织与用户", icon: Building2, group: "组织" },
@@ -45,7 +46,6 @@ const nav = [
   { to: "/applications", label: "应用与审批", icon: AppWindow },
   { to: "/permissions", label: "资源权限", icon: KeyRound },
   { to: "/audit", label: "审计记录", icon: ScrollText },
-  { to: "/settings", label: "租户设置", icon: Settings2 },
   { to: "/portal-services", label: "门户服务目录", icon: AppWindow, group: "门户" },
 ];
 function Brand() {
@@ -161,6 +161,7 @@ function Login() {
               登录控制台 <ArrowRight size={17} />
             </Button>
           </form>
+          <Link to="/reset-password">忘记密码？</Link>
           <div className="login-footnote">
             <ShieldCheck size={16} />
             请使用已注册的账号，权限由所属租户管理。
@@ -208,9 +209,16 @@ function Layout() {
   const { tenants, selected, selectedId, select } = useTenants();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const toast = useToast();
   const current = nav.find((item) => item.to === location.pathname) || nav[0];
   return (
     <div className="shell">
+      {changingPassword && session && <ChangePassword username={session.username}
+        onClose={() => setChangingPassword(false)} onChanged={() => {
+          toast("密码已修改，请用新密码重新登录");
+          logout();
+        }} />}
       <button
         className={`sidebar-scrim ${mobileOpen ? "visible" : ""}`}
         aria-label="关闭导航"
@@ -257,46 +265,38 @@ function Layout() {
             </button>
             <span className="breadcrumb-root">工作台</span>
             <span className="breadcrumb-slash">/</span>
-            <strong>{current.label}</strong>
+            <strong>{location.pathname === "/settings" ? "租户设置" : current.label}</strong>
           </div>
           <div className="topbar-right">
             {current.to !== "/organizations" && current.to !== "/portal-services" && <>
-            <div className="tenant-switch">
-              <Building2 size={16} />
-              <label className="sr-only" htmlFor="tenant-switch">
-                切换租户
-              </label>
-              <select
-                id="tenant-switch"
-                value={selected?.id || selectedId}
-                onChange={(event) => select(event.target.value)}
-              >
-                {!tenants.length && <option value="">暂无租户</option>}
-                {tenants.map((tenant) => (
-                  <option key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                    {tenant.enabled ? "" : " · 已停用"}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={13} />
-            </div>
+            <WorkspacePicker label="切换租户" kind="tenant" items={tenants}
+              selectedId={selected?.id || selectedId} onSelect={select} />
             <div className="topbar-divider" />
             </>}
-            <div className="account">
-              <span className="avatar">
-                {session?.username.slice(0, 1).toUpperCase()}
-              </span>
-              <span>{session?.username}</span>
-              <button
-                className="icon-button"
-                aria-label="退出登录"
-                title="退出登录"
-                onClick={logout}
-              >
-                <LogOut size={16} />
-              </button>
-            </div>
+            <details className="account-menu" onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+            }} onKeyDown={event => {
+              if (event.key === "Escape" && event.currentTarget.open) {
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector("summary")?.focus();
+              }
+            }}>
+              <summary className="account" aria-label={`账号菜单，${session?.username}`}>
+                <span className="avatar">{session?.username.slice(0, 1).toUpperCase()}</span>
+                <span className="account-name">{session?.username}</span>
+                <ChevronDown size={13} />
+              </summary>
+              <div className="account-menu-panel">
+                <div className="account-menu-heading"><strong>{session?.username}</strong><span>Alisa 账号</span></div>
+                <Button variant="ghost" onClick={event => {
+                  const menu = event.currentTarget.closest("details");
+                  menu?.querySelector("summary")?.focus();
+                  if (menu) menu.open = false;
+                  setChangingPassword(true);
+                }}><KeyRound size={15} />修改密码</Button>
+                <Button variant="ghost" onClick={logout}><LogOut size={15} />退出登录</Button>
+              </div>
+            </details>
           </div>
         </header>
         <main className="main-content">
@@ -371,6 +371,7 @@ export default function App() {
   return (
     <ToastProvider>
       <Routes>
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/activate-account" element={<ActivateOrganizationAccount />} />
         <Route
           path="/login"

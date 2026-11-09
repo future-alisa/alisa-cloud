@@ -21,6 +21,7 @@ import {
   Badge,
   Button,
   ClientStatus,
+  ConfirmDialog,
   Empty,
   ErrorState,
   FormFooter,
@@ -35,7 +36,9 @@ export function TenantsPage() {
   const { tenants, selected, select, loading, error, reload } = useTenants();
   const [modal, setModal] = useState<"create" | "accept" | null>(null);
   const [search, setSearch] = useState("");
-  const navigate = useNavigate();
+  const [scope, setScope] = useState<"mine" | "platform">("mine");
+  const platform = useQuery<PlatformTenantList>(platformTenantsPath);
+  const showPlatform = scope === "platform" && platform.data?.allowed;
   const filtered = tenants.filter((t) =>
     `${t.name} ${t.id}`.toLowerCase().includes(search.toLowerCase())
   );
@@ -44,7 +47,7 @@ export function TenantsPage() {
       <PageTitle
         eyebrow="WORKSPACES"
         title="租户管理"
-        description="为不同团队建立独立的空间，让成员、应用与数据各有归属。"
+        description="查找所属租户，管理成员、应用和租户设置。"
         actions={
           <>
             <Button
@@ -63,7 +66,17 @@ export function TenantsPage() {
           </>
         }
       />
-      <div className="section-toolbar">
+      <div className="section-toolbar tenant-list-toolbar">
+        <div className="tabs" role="group" aria-label="租户范围">
+          <button type="button" aria-pressed={!showPlatform} className={!showPlatform ? "active" : ""}
+            onClick={() => { setScope("mine"); setSearch(""); }}>
+            我的租户 <span>{tenants.length}</span>
+          </button>
+          {platform.data?.allowed && <button type="button" aria-pressed={!!showPlatform} className={showPlatform ? "active" : ""}
+            onClick={() => { setScope("platform"); setSearch(""); }}>
+            平台租户 <span>{platform.data.tenants.length}</span>
+          </button>}
+        </div>
         <div className="search">
           <Search size={17} />
           <input
@@ -73,9 +86,8 @@ export function TenantsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <span className="muted">共 {tenants.length} 个租户</span>
       </div>
-      {loading ? (
+      {showPlatform ? <PlatformTenantManagement platform={platform} search={search} /> : loading ? (
         <Loading />
       ) : error ? (
         <ErrorState message={error} retry={reload} />
@@ -108,26 +120,27 @@ export function TenantsPage() {
               }`}
             >
               <div className="tenant-card-top">
-                <div className="tile-icon">
-                  <Building2 size={23} />
+                <div className="tenant-card-identity">
+                  <span className="tile-icon"><Building2 size={19} aria-hidden="true" /></span>
+                  <div><h2>{tenant.name}</h2><Id value={tenant.id} /></div>
                 </div>
                 <Badge tone={tenant.enabled ? "green" : "neutral"}>
                   {tenant.enabled ? "已启用" : "已停用"}
                 </Badge>
               </div>
-              <h2>{tenant.name}</h2>
-              <Id value={tenant.id} />
               <div className="tenant-card-footer">
                 <RoleBadge role={tenant.role} />
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    select(tenant.id);
-                    navigate(tenant.enabled ? "/" : "/settings");
-                  }}
-                >
-                  进入管理 <ArrowRight size={15} />
-                </Button>
+                <nav className="tenant-card-actions" aria-label={`${tenant.name}的操作`}>
+                  {tenant.enabled && <>
+                    <Link className="button ghost" to="/members" onClick={() => select(tenant.id)}>
+                      {isAdmin(tenant) ? "管理成员" : "查看成员"}
+                    </Link>
+                    <Link className="button ghost" to="/applications" onClick={() => select(tenant.id)}>接入应用</Link>
+                  </>}
+                  <Link className="button ghost" to="/settings" onClick={() => select(tenant.id)}>
+                    租户设置
+                  </Link>
+                </nav>
               </div>
             </article>
           ))}
@@ -137,6 +150,103 @@ export function TenantsPage() {
     </>
   );
 }
+type PlatformTenant = { id: string; name: string; enabled: boolean };
+type PlatformTenantList = { allowed: boolean; tenants: PlatformTenant[] };
+const platformTenantsPath = "/api/v1/user/tenants/platform";
+
+function PlatformTenantManagement({ platform, search }: {
+  platform: ReturnType<typeof useQuery<PlatformTenantList>>;
+  search: string;
+}) {
+  const { api } = useSession();
+  const { reload } = useTenants();
+  const toast = useToast();
+  const [statusTarget, setStatusTarget] = useState<PlatformTenant>();
+  const [deleteTarget, setDeleteTarget] = useState<PlatformTenant>();
+  const [confirmationName, setConfirmationName] = useState("");
+  const action = useAction();
+
+  if (!platform.data?.allowed) return null;
+  const term = search.trim().toLowerCase();
+  const filtered = platform.data.tenants.filter(tenant =>
+    `${tenant.name} ${tenant.id}`.toLowerCase().includes(term)
+  );
+  const refresh = () => {
+    platform.reload();
+    reload();
+  };
+
+  return <section className="panel platform-tenants">
+    <div className="panel-heading">
+      <div><h2>平台租户管理</h2><p>查看平台上的租户，并管理其运行状态。</p></div>
+    </div>
+    <Alert>{platform.error}</Alert>
+    <div className="table-scroll">
+      <table>
+        <thead><tr><th>租户</th><th>状态</th><th className="align-right">操作</th></tr></thead>
+        <tbody>{filtered.map(tenant => (
+          <tr key={tenant.id}>
+            <td><strong>{tenant.name}</strong><br /><Id value={tenant.id} /></td>
+            <td><Badge tone={tenant.enabled ? "green" : "neutral"}>{tenant.enabled ? "已启用" : "已停用"}</Badge></td>
+            <td><div className="row-actions">
+              <Button variant="ghost" onClick={() => setStatusTarget(tenant)}>{tenant.enabled ? "停用" : "重新启用"}</Button>
+              {!tenant.enabled && <Button variant="ghost" className="danger-text" onClick={() => {
+                setConfirmationName("");
+                action.setError("");
+                setDeleteTarget(tenant);
+              }}>删除租户</Button>}
+            </div></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+    {!filtered.length && <Empty title={term ? "没有匹配的租户" : "暂无平台租户"}
+      description={term ? "试试其他租户名称或 ID。" : "创建租户后，它会出现在这里。"} />}
+    {statusTarget && <ConfirmDialog
+      title={statusTarget.enabled ? "停用租户？" : "重新启用租户？"}
+      description={statusTarget.enabled
+        ? `停用「${statusTarget.name}」后，成员无法进入租户，现有 OAuth 授权和待接受邀请会失效。`
+        : `重新启用「${statusTarget.name}」后，成员可以重新进入租户。`}
+      danger={statusTarget.enabled}
+      onClose={() => setStatusTarget(undefined)}
+      onConfirm={async () => {
+        await api(`${platformTenantsPath}/${encodeURIComponent(statusTarget.id)}/status`, {
+          method: "PUT",
+          body: { enabled: !statusTarget.enabled },
+        });
+        refresh();
+        toast(statusTarget.enabled ? "租户已停用" : "租户已启用");
+      }}
+    />}
+    {deleteTarget && <Modal title="永久删除租户"
+      description={`删除「${deleteTarget.name}」会清除成员关系、接入凭据和租户权限。操作不可恢复，审计记录会保留。`}
+      busy={action.pending} onClose={() => setDeleteTarget(undefined)}>
+      <form onSubmit={event => {
+        event.preventDefault();
+        if (confirmationName !== deleteTarget.name) return;
+        void action.run(async () => {
+          await api(`${platformTenantsPath}/${encodeURIComponent(deleteTarget.id)}?name=${encodeURIComponent(confirmationName)}`, {
+            method: "DELETE",
+          });
+          setDeleteTarget(undefined);
+          refresh();
+          toast("租户已删除");
+        });
+      }}>
+        <label>输入租户名称确认
+          <input autoFocus required value={confirmationName} onChange={event => setConfirmationName(event.target.value)} />
+        </label>
+        <Alert>{action.error}</Alert>
+        <div className="form-footer">
+          <Button type="button" disabled={action.pending} onClick={() => setDeleteTarget(undefined)}>取消</Button>
+          <Button type="submit" variant="danger" loading={action.pending}
+            disabled={confirmationName !== deleteTarget.name}>永久删除</Button>
+        </div>
+      </form>
+    </Modal>}
+  </section>;
+}
+
 function TenantDialog({
   kind,
   onClose,
@@ -267,7 +377,7 @@ export function Overview() {
         actions={
           <Link className="button secondary" to="/tenants">
             <Building2 size={16} />
-            管理租户
+            租户管理
           </Link>
         }
       />
@@ -302,6 +412,7 @@ export function Overview() {
             {[
               {
                 label: "所属租户",
+                to: "/tenants",
                 value: tenants.tenants.length,
                 icon: Building2,
                 tone: "blue",
@@ -309,6 +420,7 @@ export function Overview() {
               },
               {
                 label: "租户成员",
+                to: "/members",
                 value: members.data?.length,
                 icon: Users,
                 tone: "teal",
@@ -316,6 +428,7 @@ export function Overview() {
               },
               {
                 label: isAdmin(selected) ? "接入应用" : "我的接入应用",
+                to: "/applications",
                 value: clients.data?.filter((a) => a.kind !== "resource")
                   .length,
                 icon: AppWindow,
@@ -324,6 +437,7 @@ export function Overview() {
               },
               {
                 label: "待审批应用",
+                to: "/applications",
                 value: clients.data?.filter(
                   (a) => a.enabled && a.approval === "PENDING"
                 ).length,
@@ -334,7 +448,7 @@ export function Overview() {
                   : "等待管理员审批的申请",
               },
             ].map((stat) => (
-              <article className="stat-card" key={stat.label}>
+              <Link to={stat.to} className="stat-card stat-card-link" key={stat.label}>
                 <div>
                   <span>{stat.label}</span>
                   <strong>{stat.value ?? "—"}</strong>
@@ -343,7 +457,7 @@ export function Overview() {
                 <div className={`stat-icon ${stat.tone}`}>
                   <stat.icon size={22} />
                 </div>
-              </article>
+              </Link>
             ))}
           </div>
           <div className="overview-grid">
@@ -504,7 +618,8 @@ export function SettingsPage() {
       <PageTitle
         eyebrow="SETTINGS"
         title="租户设置"
-        description="管理空间信息和运行状态。只有所有者可以修改租户设置。"
+        description={`管理「${selected.name}」的基本信息和运行状态。只有所有者可以修改租户设置。`}
+        actions={<Link className="button secondary" to="/tenants">返回租户管理</Link>}
       />
       <section className="panel settings-panel">
         <div className="panel-heading">

@@ -94,9 +94,7 @@ it("logs in and creates a tenant without embedding business scopes in the UI", a
   });
   fireEvent.click(within(dialog).getByRole("button", { name: "创建租户" }));
   await waitFor(() =>
-    expect(screen.getByRole("combobox", { name: "切换租户" })).toHaveValue(
-      "tenant-1"
-    )
+    expect(screen.getByRole("button", { name: "切换租户" })).toHaveTextContent("研发团队")
   );
   expect(screen.getByText("租户已创建")).toBeInTheDocument();
 });
@@ -174,4 +172,26 @@ it("ignores old tenant responses even when a transport does not honor abort", as
     expect(screen.queryByText("tenant A")).not.toBeInTheDocument()
   );
   expect(screen.getByText("tenant B")).toBeInTheDocument();
+});
+it("uses an existing email code and keeps the recovery form open when the code is rejected", async () => {
+  const request = vi.fn(() => respond({ code: 200, data: false }));
+  vi.stubGlobal("fetch", request);
+  render(
+    <MemoryRouter initialEntries={["/login"]}>
+      <SessionProvider><App /></SessionProvider>
+    </MemoryRouter>
+  );
+  fireEvent.click(screen.getByRole("link", { name: "忘记密码？" }));
+  fireEvent.change(screen.getByLabelText("注册邮箱"), { target: { value: "managed@example.org" } });
+  fireEvent.click(screen.getByRole("button", { name: "我已有验证码" }));
+  expect(request).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("邮箱验证码"), { target: { value: "123456" } });
+  fireEvent.change(screen.getByLabelText("新密码", { exact: true }), { target: { value: "Test password 42" } });
+  fireEvent.change(screen.getByLabelText("确认新密码"), { target: { value: "Test password 42" } });
+  fireEvent.click(screen.getByRole("button", { name: "重置密码" }));
+  expect(await screen.findByText("验证码无效或已过期，请重新获取")).toBeInTheDocument();
+  expect(request).toHaveBeenCalledWith("/api/v1/user/change-password-email", expect.objectContaining({
+    method: "POST",
+    body: JSON.stringify({ email: "managed@example.org", code: "123456", newPassword: "Test password 42" }),
+  }));
 });

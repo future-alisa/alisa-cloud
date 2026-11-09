@@ -24,7 +24,12 @@ public class OAuthApplications implements RegisteredClientRepository {
         var records=jdbc.query("select tenant_id,kind,approval from alisa_oauth_application where client_id=?",(r,n)->new TenantInfo(r.getString(1),r.getString(2),r.getString(3)),clientId);
         return records.isEmpty()?null:records.get(0);
     }
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.beans.factory.ObjectProvider<com.alisa.user.tenant.OrganizationDirectory> organizations;
+
     public void requireTenantUser(String clientId,String user) {
+        var directory = organizations == null ? null : organizations.getIfAvailable();
+        if (directory != null) directory.activeSessionVersion(user);
         var info=tenantInfo(clientId);
         if(info!=null && !info.tenantId().isBlank()) tenants.member(info.tenantId(),user);
     }

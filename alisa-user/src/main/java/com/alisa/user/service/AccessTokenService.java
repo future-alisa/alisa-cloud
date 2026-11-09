@@ -1,6 +1,11 @@
 package com.alisa.user.service;
 
 import java.util.Map;
+import java.util.HashMap;
+import java.util.Objects;
+import org.springframework.security.core.Authentication;
+import org.springframework.beans.factory.ObjectProvider;
+import com.alisa.user.tenant.OrganizationDirectory;
 import com.alisa.util.JwtUtil;
 import com.alisa.user.entity.User;
 import org.springframework.http.HttpStatus;
@@ -10,8 +15,48 @@ import org.springframework.util.StringUtils;
 
 @Component
 public class AccessTokenService {
+    private static final String SESSION_VERSION = "managedAccountVersion";
+    private static final String BROWSER_VERSION = "ALISA_ACCOUNT_VERSION_";
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setOrganizationAccounts(ObjectProvider<OrganizationDirectory> organizations) {
+        this.organizations = organizations;
+    }
+
+    private ObjectProvider<OrganizationDirectory> organizations;
+
+    public String accountVersion(String userId) {
+        var directory = organizations == null ? null : organizations.getIfAvailable();
+        return directory == null ? "0" : directory.activeSessionVersion(userId);
+    }
+
+    public String browserVersionAuthority(String userId) {
+        return BROWSER_VERSION + accountVersion(userId);
+    }
+
+    public void requireBrowserSession(Authentication authentication) {
+        String version = authentication.getAuthorities().stream()
+            .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+            .filter(authority -> authority.startsWith(BROWSER_VERSION))
+            .map(authority -> authority.substring(BROWSER_VERSION.length()))
+            .findFirst().orElse("0");
+        requireVersion(authentication.getName(), version);
+    }
+
+    private void requireVersion(String userId, String version) {
+        if (!Objects.equals(accountVersion(userId), version == null ? "0" : version))
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请重新登录");
+    }
+
     public String issue(User user) {
-        return JwtUtil.GenerateToken(user.getUsername(), Map.of("userId", user.getId()));
+        return issue(user, Map.of());
+    }
+
+    public String issue(User user, Map<String, String> additionalClaims) {
+        Map<String, Object> claims = new HashMap<>(additionalClaims);
+        claims.put("userId", user.getId());
+        claims.put(SESSION_VERSION, accountVersion(user.getId()));
+        return JwtUtil.GenerateToken(user.getUsername(), claims);
     }
     private com.alisa.security.DelegatedIdentityResolver delegated;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
@@ -41,6 +86,7 @@ public class AccessTokenService {
             var claims = JwtUtil.extractAllClaims(authorization.substring(7));
             String id = claims.get("userId", String.class);
             if (!StringUtils.hasText(id) || !StringUtils.hasText(claims.getSubject())) throw new IllegalArgumentException();
+            requireVersion(id, claims.get(SESSION_VERSION, String.class));
             return id;
         } catch (Exception exception) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录");

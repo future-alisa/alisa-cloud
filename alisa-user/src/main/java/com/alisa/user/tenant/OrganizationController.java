@@ -20,10 +20,19 @@ public class OrganizationController {
         this.tokens = tokens;
     }
 
+    @PostMapping("/{organization}/accounts/{account}/actions")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void manage(@RequestHeader(value = "Authorization", required = false) String token,
+                       @PathVariable String organization, @PathVariable String account, @RequestBody ManageAccount request) {
+        if (request.action() == null) throw new IllegalArgumentException("请选择账号操作");
+        directory.manage(organization, tokens.requireFirstPartyUserId(token), account, request.action());
+    }
+
     public record CreateOrganization(String name) {}
     public record CreateAccount(String username, String email) {}
     public record ActivationLink(String id, String token) {}
     public record ActivateAccount(String id, String token, String password, String code) {}
+    public record ManageAccount(OrganizationDirectory.AccountAction action) {}
     public record TenantAssignment(String tenantId) {}
 
     @GetMapping

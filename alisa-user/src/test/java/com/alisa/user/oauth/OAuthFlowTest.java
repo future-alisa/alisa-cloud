@@ -32,7 +32,7 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 @TestPropertySource(properties={"alisa.oauth.enabled=true","alisa.oauth.issuer=http://localhost","alisa.oauth.allow-loopback-redirects=true",
     "alisa.oauth.applications.demo.[demo\\:target\\:read]=Read targets","alisa.oauth.applications.demo.[demo\\:target\\:delete]=Delete targets"})
 class OAuthFlowTest {
-    @org.springframework.boot.test.context.TestConfiguration @EnableWebSecurity @EnableWebMvc @Import({OAuthConfiguration.class,OAuthPages.class,OAuthLoginPage.class})
+    @org.springframework.boot.test.context.TestConfiguration @EnableWebSecurity @EnableWebMvc @Import({OAuthConfiguration.class,OAuthPages.class,OAuthLoginPage.class,com.alisa.user.service.AccessTokenService.class})
     static class Config {
         @Bean DataSource dataSource() {
             var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa","");
