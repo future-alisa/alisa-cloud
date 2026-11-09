@@ -1,0 +1,155 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "alisa-admin-api",
+    "namespace": "alisa-infra",
+    "annotations": {
+      "argocd.argoproj.io/sync-wave": "0"
+    }
+  },
+  "spec": {
+    "replicas": 1,
+    "strategy": {
+      "type": "Recreate"
+    },
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/name": "alisa-admin-api"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "alisa-admin-api"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "dnsPolicy": "Default",
+        "imagePullSecrets": [
+          {
+            "name": "alisa-admin-registry-auth"
+          }
+        ],
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 1000,
+          "runAsGroup": 1000,
+          "fsGroup": 1000
+        },
+        "containers": [
+          {
+            "name": "api",
+            "image": "registry.kind.internal:5000/alisa-admin-api@sha256:9284b676b1a5e04f259859a3c06ed4c3a004c0878a976b1a02b781d8fcc9dbae",
+            "ports": [
+              {
+                "name": "http",
+                "containerPort": 8084
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "tmp",
+                "mountPath": "/tmp"
+              },
+              {
+                "name": "config",
+                "mountPath": "/config",
+                "readOnly": true
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "768Mi"
+              }
+            },
+            "readinessProbe": {
+              "httpGet": {
+                "path": "/api/v1/user/health",
+                "port": "http"
+              },
+              "periodSeconds": 10
+            },
+            "livenessProbe": {
+              "httpGet": {
+                "path": "/api/v1/user/health",
+                "port": "http"
+              },
+              "periodSeconds": 20
+            },
+            "startupProbe": {
+              "httpGet": {
+                "path": "/api/v1/user/health",
+                "port": "http"
+              },
+              "periodSeconds": 5,
+              "failureThreshold": 60
+            },
+            "envFrom": [
+              {
+                "secretRef": {
+                  "name": "alisa-jwt"
+                }
+              },
+              {
+                "secretRef": {
+                  "name": "alisa-user-db"
+                }
+              }
+            ],
+            "env": [
+              {
+                "name": "SPRING_PROFILES_ACTIVE",
+                "value": "admin"
+              },
+              {
+                "name": "SPRING_CONFIG_ADDITIONAL_LOCATION",
+                "value": "file:/config/"
+              },
+              {
+                "name": "JAVA_TOOL_OPTIONS",
+                "value": "-XX:MaxRAMPercentage=65"
+              },
+              {
+                "name": "PORTAL_BOOTSTRAP_ADMINISTRATOR",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "alisa-admin-bootstrap",
+                    "key": "PORTAL_BOOTSTRAP_ADMINISTRATOR"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "tmp",
+            "emptyDir": {}
+          },
+          {
+            "name": "config",
+            "configMap": {
+              "name": "alisa-admin-config"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

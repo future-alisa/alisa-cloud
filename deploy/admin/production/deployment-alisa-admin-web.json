@@ -1,0 +1,114 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "alisa-admin-web",
+    "namespace": "alisa-infra",
+    "annotations": {
+      "argocd.argoproj.io/sync-wave": "10"
+    }
+  },
+  "spec": {
+    "replicas": 1,
+    "strategy": {
+      "type": "Recreate"
+    },
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/name": "alisa-admin-web"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "alisa-admin-web"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "dnsPolicy": "Default",
+        "imagePullSecrets": [
+          {
+            "name": "alisa-admin-registry-auth"
+          }
+        ],
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 101,
+          "runAsGroup": 101,
+          "fsGroup": 101
+        },
+        "containers": [
+          {
+            "name": "web",
+            "image": "registry.kind.internal:5000/alisa-admin-web@sha256:1fdc47e34592242756cc462d914468f820f12381bfabada995f7094c9020e2d1",
+            "ports": [
+              {
+                "name": "http",
+                "containerPort": 8080
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "tmp",
+                "mountPath": "/tmp"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "32Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "128Mi"
+              }
+            },
+            "readinessProbe": {
+              "httpGet": {
+                "path": "/healthz",
+                "port": "http"
+              },
+              "periodSeconds": 10
+            },
+            "livenessProbe": {
+              "httpGet": {
+                "path": "/healthz",
+                "port": "http"
+              },
+              "periodSeconds": 20
+            },
+            "startupProbe": {
+              "httpGet": {
+                "path": "/healthz",
+                "port": "http"
+              },
+              "periodSeconds": 5,
+              "failureThreshold": 60
+            },
+            "command": [
+              "nginx",
+              "-g",
+              "daemon off;"
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "tmp",
+            "emptyDir": {}
+          }
+        ]
+      }
+    }
+  }
+}
