@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - persistentvolumeclaim-alisa-admin-auth-backups.json
   - configmap-alisa-admin-config.json
-  - job-alisa-admin-auth-schema-9284b676b1a5.json
+  - job-alisa-admin-auth-schema-c7122a47251e.json
   - deployment-alisa-admin-api.json
   - service-alisa-admin-api.json
   - deployment-alisa-admin-web.json
