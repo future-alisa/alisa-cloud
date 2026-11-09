@@ -11,7 +11,7 @@ def resource(kind,name,spec=None,data=None,wave=None):
  if spec is not None:x['spec']=spec
  if data is not None:x['data']=data
  items.append(x);return x
-x=resource('PersistentVolumeClaim','alisa-admin-auth-backups',{'accessModes':['ReadWriteOnce'],'resources':{'requests':{'storage':'2Gi'}}},wave=-30);x['metadata']['annotations']['argocd.argoproj.io/sync-options']='Prune=false,Delete=false'
+x=resource('PersistentVolumeClaim','alisa-admin-auth-backups',{'accessModes':['ReadWriteOnce'],'resources':{'requests':{'storage':'2Gi'}}},wave=-20);x['metadata']['annotations']['argocd.argoproj.io/sync-options']='Prune=false,Delete=false'
 config='''server:
   forward-headers-strategy: framework
   servlet:
