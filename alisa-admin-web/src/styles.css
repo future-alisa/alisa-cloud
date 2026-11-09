@@ -2176,3 +2176,25 @@ th {
 .stat-card small {
   color: #8b98ad;
 }
+
+.portal-network-settings {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+  min-width: 0;
+}
+
+.portal-network-rules {
+  padding: 20px 25px;
+}
+
+.portal-network-rules .row-actions {
+  margin-top: 16px;
+}
+
+.portal-endpoint {
+  display: inline-block;
+  min-width: 10ch;
+  max-width: 32ch;
+  overflow-wrap: anywhere;
+}

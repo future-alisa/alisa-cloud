@@ -1,3 +1,4 @@
+import { sharedSignInUrl } from "./state";
 import { useState, type FormEvent, type ReactNode } from "react";
 import {
   Link,
@@ -34,8 +35,10 @@ import MembersPage from "./pages/Members";
 import ApplicationsPage from "./pages/Applications";
 import PermissionsPage from "./pages/Permissions";
 import AuditPage from "./pages/Audit";
+import PortalServices from "./pages/PortalServices";
 const nav = [
   { to: "/", label: "总览", icon: LayoutDashboard },
+  { to: "/portal-services", label: "门户服务目录", icon: AppWindow },
   { to: "/tenants", label: "租户管理", icon: Building2 },
   { to: "/members", label: "成员管理", icon: Users },
   { to: "/applications", label: "应用与审批", icon: AppWindow },
@@ -124,6 +127,10 @@ function Login() {
           <div className="eyebrow">WELCOME BACK</div>
           <h2>登录管理控制台</h2>
           <p>使用你的 Alisa 账号继续。</p>
+          {sharedSignInUrl && <a className="button primary" href={sharedSignInUrl}
+            onClick={() => sessionStorage.removeItem("alisa.admin.signed-out")}>
+            使用 Alisa 账号继续
+          </a>}
           <form onSubmit={submit}>
             <label>
               账号
@@ -289,6 +296,7 @@ function Layout() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Overview key={selectedId} />} />
+            <Route path="/portal-services" element={<PortalServices />} />
             <Route path="/tenants" element={<TenantsPage />} />
             <Route
               path="/settings"
@@ -351,7 +359,8 @@ function Layout() {
   );
 }
 export default function App() {
-  const { session } = useSession();
+  const { session, checkingSession } = useSession();
+  if (checkingSession) return <main role="status">正在确认 Alisa 登录状态…</main>;
   return (
     <ToastProvider>
       <Routes>

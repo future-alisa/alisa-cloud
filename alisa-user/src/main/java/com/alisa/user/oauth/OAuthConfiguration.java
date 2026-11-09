@@ -167,7 +167,10 @@ public class OAuthConfiguration {
         @Bean @Order(2)
         SecurityFilterChain browser(HttpSecurity http,AuthenticationProvider accountAuthentication) throws Exception {
             return http.securityMatcher("/login","/logout","/oauth/**").authenticationProvider(accountAuthentication)
-                .exceptionHandling(c->c.accessDeniedHandler((request,response,exception)->{
+                .exceptionHandling(c->c.defaultAuthenticationEntryPointFor(
+                    new org.springframework.security.web.authentication.HttpStatusEntryPoint(org.springframework.http.HttpStatus.UNAUTHORIZED),
+                    new org.springframework.security.web.util.matcher.AntPathRequestMatcher("/oauth/admin/session"))
+                    .accessDeniedHandler((request,response,exception)->{
                     String path=new org.springframework.web.util.UrlPathHelper().getPathWithinApplication(request);
                     if(exception instanceof org.springframework.security.web.csrf.CsrfException && path.equals("/login")) {
                         org.slf4j.LoggerFactory.getLogger(OAuthConfiguration.class).debug(

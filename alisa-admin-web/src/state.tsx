@@ -9,13 +9,18 @@ import {
 } from "react";
 import { createApi, tokenUserId } from "./api";
 import type { Result, Session, Tenant } from "./types";
+const sessionKey = "alisa.admin.session";
+const signedOutKey = "alisa.admin.signed-out";
+const adminBase = import.meta.env.BASE_URL;
+export const sharedSignInUrl = adminBase === "/admin/" ? adminBase + "auth/oauth/admin/continue" : "";
+
 const SessionContext = createContext<ReturnType<typeof useSessionState> | null>(
   null
 );
 function readSession(): Session | null {
   try {
     const value = JSON.parse(
-      sessionStorage.getItem("alisa.admin.session") || "null"
+      sessionStorage.getItem(sessionKey) || "null"
     );
     return value &&
       typeof value.token === "string" &&
@@ -29,13 +34,56 @@ function readSession(): Session | null {
 function useSessionState() {
   const [session, setSession] = useState<Session | null>(readSession);
   const logout = useCallback(() => {
-    sessionStorage.removeItem("alisa.admin.session");
+    sessionStorage.removeItem(sessionKey);
+    sessionStorage.setItem(signedOutKey, "1");
     setSession(null);
   }, []);
   const api = useMemo(
     () => createApi(session?.token || "", logout),
     [session?.token, logout]
   );
+  const [checkingSession, setCheckingSession] = useState(
+    () => !!sharedSignInUrl && !session && !sessionStorage.getItem(signedOutKey)
+  );
+  const saveSession = useCallback((username: string, token: string) => {
+    const value = { username, token, userId: tokenUserId(token) };
+    if (!value.userId) throw new Error("无法确认登录身份");
+    sessionStorage.setItem(sessionKey, JSON.stringify(value));
+    sessionStorage.removeItem(signedOutKey);
+    setSession(value);
+  }, []);
+
+  useEffect(() => {
+    if (!checkingSession) return;
+    const controller = new AbortController();
+    const url = adminBase + "auth/oauth/admin/session";
+    const options = { signal: controller.signal, cache: "no-store" as const, redirect: "error" as const };
+    const timer = window.setTimeout(() => controller.abort(), 5000);
+    let active = true;
+    void (async () => {
+      try {
+        const challenge = await fetch(url, options);
+        if (!challenge.ok) return;
+        const { header, csrf } = await challenge.json();
+        if (header !== "X-CSRF-TOKEN" || typeof csrf !== "string" || !csrf) return;
+        const response = await fetch(url, { ...options, method: "POST", headers: { [header]: csrf } });
+        if (!response.ok) return;
+        const { username, token } = await response.json();
+        if (active && typeof username === "string" && typeof token === "string") saveSession(username, token);
+      } catch {
+        // The login screen remains available if the shared session cannot be used.
+      } finally {
+        if (active) setCheckingSession(false);
+        window.clearTimeout(timer);
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [checkingSession, saveSession]);
+
   const login = async (username: string, password: string) => {
     const result = await createApi("", () => {})<Result<string>>(
       "/api/v1/user/signin",
@@ -45,15 +93,9 @@ function useSessionState() {
       throw new Error(result.message || "登录失败，请稍后重试");
     if (typeof result.data !== "string" || !result.data.trim())
       throw new Error("登录失败，请检查账号和密码");
-    const value = {
-      username,
-      token: result.data,
-      userId: tokenUserId(result.data),
-    };
-    sessionStorage.setItem("alisa.admin.session", JSON.stringify(value));
-    setSession(value);
+    saveSession(username, result.data);
   };
-  return { session, api, login, logout };
+  return { session, api, login, logout, checkingSession };
 }
 export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useSessionState();
