@@ -2198,3 +2198,44 @@ th {
   max-width: 32ch;
   overflow-wrap: anywhere;
 }
+
+.sidebar nav .nav-group {
+  margin: 6px 14px 0;
+  color: #77849a;
+  font-size: 11px;
+}
+
+.organization-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 0 0 18px;
+  list-style: none;
+  counter-reset: organization-step;
+}
+
+.organization-steps li {
+  counter-increment: organization-step;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.organization-steps strong::before {
+  content: counter(organization-step) ". ";
+  color: var(--primary);
+}
+
+.organization-steps span {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.organization-tenant-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

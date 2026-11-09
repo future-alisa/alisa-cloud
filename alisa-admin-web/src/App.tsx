@@ -1,5 +1,5 @@
 import { sharedSignInUrl } from "./state";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useState, type FormEvent, type ReactNode } from "react";
 import {
   Link,
   NavLink,
@@ -39,14 +39,14 @@ import Organizations, { ActivateOrganizationAccount } from "./pages/Organization
 import PortalServices from "./pages/PortalServices";
 const nav = [
   { to: "/", label: "总览", icon: LayoutDashboard },
-  { to: "/portal-services", label: "门户服务目录", icon: AppWindow },
-  { to: "/organizations", label: "组织与用户", icon: Building2 },
-  { to: "/tenants", label: "租户管理", icon: Building2 },
+  { to: "/organizations", label: "组织与用户", icon: Building2, group: "组织" },
+  { to: "/tenants", label: "租户管理", icon: Building2, group: "租户" },
   { to: "/members", label: "成员管理", icon: Users },
   { to: "/applications", label: "应用与审批", icon: AppWindow },
   { to: "/permissions", label: "资源权限", icon: KeyRound },
   { to: "/audit", label: "审计记录", icon: ScrollText },
   { to: "/settings", label: "租户设置", icon: Settings2 },
+  { to: "/portal-services", label: "门户服务目录", icon: AppWindow, group: "门户" },
 ];
 function Brand() {
   return (
@@ -221,8 +221,9 @@ function Layout() {
         <div className="sidebar-caption">管理工作台</div>
         <nav>
           {nav.map((item) => (
+            <Fragment key={item.to}>
+              {item.group && <span className="nav-group">{item.group}</span>}
             <NavLink
-              key={item.to}
               end={item.to === "/"}
               to={item.to}
               onClick={() => setMobileOpen(false)}
@@ -233,6 +234,7 @@ function Layout() {
                 <span className="nav-small">OAuth</span>
               )}
             </NavLink>
+            </Fragment>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -258,6 +260,7 @@ function Layout() {
             <strong>{current.label}</strong>
           </div>
           <div className="topbar-right">
+            {current.to !== "/organizations" && current.to !== "/portal-services" && <>
             <div className="tenant-switch">
               <Building2 size={16} />
               <label className="sr-only" htmlFor="tenant-switch">
@@ -279,6 +282,7 @@ function Layout() {
               <ChevronDown size={13} />
             </div>
             <div className="topbar-divider" />
+            </>}
             <div className="account">
               <span className="avatar">
                 {session?.username.slice(0, 1).toUpperCase()}

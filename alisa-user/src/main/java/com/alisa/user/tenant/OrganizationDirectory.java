@@ -4,8 +4,8 @@ import com.alisa.user.dto.user.UserDto;
 import com.alisa.user.mapper.UserMapper;
 import com.alisa.user.service.IdentityService;
 import com.alisa.user.service.VerificationCodeService;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.MailException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -97,7 +97,12 @@ public class OrganizationDirectory {
     }
 
     public void sendActivationCode(String account, String token) {
-        codes.sendActivation(pending(account, token, false).email(), account);
+        String email = pending(account, token, false).email();
+        try {
+            codes.sendActivation(email, account);
+        } catch (MailException e) {
+            throw new ResponseStatusException(SERVICE_UNAVAILABLE, "验证码邮件暂时发送失败，请稍后重试");
+        }
     }
 
     private Account pending(String account, String token, boolean lock) {
@@ -121,13 +126,8 @@ public class OrganizationDirectory {
         user.setUsername(pending.username());
         user.setEmail(pending.email());
         user.setPassword(password);
-        String userId;
-        try {
-            userId = identity.register(user);
-            if (userId == null) throw new ResponseStatusException(CONFLICT, "账号已存在，请联系组织管理员");
-        } catch (DuplicateKeyException e) {
-            throw new ResponseStatusException(CONFLICT, "账号已存在，请联系组织管理员");
-        }
+        String userId = identity.register(user);
+        if (userId == null) throw new ResponseStatusException(CONFLICT, "账号已存在，请联系组织管理员");
         jdbc.update("update alisa_organization_account set user_id=?,activation_hash=null,expires_at=null where id=?", userId, account);
     }
 

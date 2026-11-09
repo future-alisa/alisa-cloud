@@ -10,6 +10,7 @@ import com.alisa.user.dto.ChangePasswordRequest;
 import com.alisa.user.dto.user.UserDto;
 import com.alisa.user.vo.UserVo;
 import com.alisa.util.UUIDTool;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -50,7 +51,11 @@ public class IdentityService {
         User user = new User();
         user.setId(UUIDTool.getUUID()); user.setUsername(request.getUsername().trim());
         user.setEmail(email); user.setPassword(passwords.encode(request.getPassword()));
-        return users.saveUser(user) ? user.getId() : null;
+        try {
+            return users.saveUser(user) ? user.getId() : null;
+        } catch (DuplicateKeyException e) {
+            return null;
+        }
     }
     public void sendResetCode(String address) {
         // The response never reveals whether an account exists.

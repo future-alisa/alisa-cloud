@@ -20,10 +20,6 @@
     <insert id="saveUser" parameterType="com.alisa.user.entity.User">
         INSERT INTO tb_user(user_id, user_name, user_password,user_email) 
         VALUES (#{id}, #{username}, #{password},#{email})
-        ON DUPLICATE KEY UPDATE 
-        user_name = VALUES(user_name), 
-        user_password = VALUES(user_password),
-        user_email = VALUES(user_email)
     </insert>
     <update id="updatePasswordIfMatches">
         UPDATE tb_user SET user_password = #{password}

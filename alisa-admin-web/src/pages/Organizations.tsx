@@ -19,7 +19,7 @@ type Dialog =
 
 export default function Organizations() {
   const { api } = useSession();
-  const { tenants } = useTenants();
+  const { tenants, select } = useTenants();
   const toast = useToast();
   const organizations = useQuery<Organization[]>(root);
   const [selected, setSelected] = useState("");
@@ -86,7 +86,13 @@ export default function Organizations() {
     <Alert>{organizations.error || accounts.error || linked.error}</Alert>
     {organizations.loading && <p role="status">正在加载组织…</p>}
     {!organizations.loading && !organization && <p>创建组织后，即可开通账号或关联你拥有的租户。</p>}
-    {organization && <section className="panel settings-panel">
+    {organization && <>
+      <ol className="organization-steps">
+        <li><strong>关联租户</strong><span>把组织要管理的现有租户关联进来。</span></li>
+        <li><strong>开通账号</strong><span>创建账号后，把激活链接交给用户。</span></li>
+        <li><strong>分配权限</strong><span>账号激活后分配租户，角色在租户成员页修改。</span></li>
+      </ol>
+      <section className="panel settings-panel">
       <div className="panel-heading">
         <label>当前组织<select value={organization.id} onChange={event => setSelected(event.target.value)}>
           {organizations.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -97,8 +103,13 @@ export default function Organizations() {
         </div>
       </div>
       <div className="panel-heading">
-        <div><h2>已关联租户</h2><p>{linked.data?.map(item => item.name).join("、") || "尚未关联可管理的租户"}</p></div>
+        <div><h2>已关联租户</h2><p>选择一个租户，查看其成员和角色。</p></div>
+        <div className="organization-tenant-links">
+          {linked.data?.length ? linked.data.map(item => <Link key={item.id} className="button secondary"
+            to="/members" onClick={() => select(item.id)}>{item.name}</Link>) : <span className="muted">尚未关联租户</span>}
+        </div>
       </div>
+      <div className="panel-heading"><h2>托管账号</h2></div>
       <div className="table-scroll"><table>
         <thead><tr><th>用户名</th><th>邮箱</th><th>状态</th><th className="align-right">操作</th></tr></thead>
         <tbody>{accounts.data?.map(account => <tr key={account.id}>
@@ -114,7 +125,8 @@ export default function Organizations() {
       </table></div>
       {accounts.loading && <p role="status">正在加载组织账号…</p>}
       {accounts.data?.length === 0 && <div className="panel-heading">当前组织暂无托管账号。</div>}
-    </section>}
+      </section>
+    </>}
     {dialog && <Modal title={{ create: "创建组织", account: "创建托管账号", link: "关联现有租户", assign: "分配租户" }[dialog.kind]}
       busy={busy} onClose={() => setDialog(undefined)}>
       <form onSubmit={save}>
