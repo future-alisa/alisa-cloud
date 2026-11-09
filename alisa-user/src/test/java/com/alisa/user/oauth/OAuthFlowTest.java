@@ -125,8 +125,23 @@ class OAuthFlowTest {
             .andExpect(content().string(org.hamcrest.Matchers.containsString("name='_csrf'")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("登录你的 Alisa 账号")));
         mvc.perform(post("/auth/login").contextPath("/auth").param("username","alisa").param("password","invalid"))
-            .andExpect(status().isForbidden());
+            .andExpect(status().isSeeOther()).andExpect(header().string("Location","/auth/login?expired"));
         mvc.perform(get("/login").param("error","<script>bad</script>"))
             .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("<script>bad</script>"))));
+    }
+    @Test void staleLoginCsrfReturnsFreshFormWithoutAuthenticating() throws Exception {
+        var form=mvc.perform(get("/login")).andExpect(status().isOk()).andReturn();
+        var csrf=(org.springframework.security.web.csrf.CsrfToken)form.getRequest().getAttribute(org.springframework.security.web.csrf.CsrfToken.class.getName());
+        String oldToken=csrf.getToken();
+        form.getRequest().getSession().invalidate();
+        var denied=mvc.perform(post("/login").param("username","alisa").param("password","do-not-replay").param("_csrf",oldToken))
+            .andExpect(status().isSeeOther()).andExpect(header().string("Location","/login?expired")).andReturn();
+        var session=denied.getRequest().getSession(false);
+        assertTrue(session==null || session.getAttribute("SPRING_SECURITY_CONTEXT")==null);
+        mvc.perform(get("/login").param("expired",""))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("登录页面已过期")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("name='_csrf'")))
+            .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("do-not-replay"))));
     }
 }

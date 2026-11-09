@@ -16,6 +16,7 @@ public class OAuthLoginPage {
     public ResponseEntity<String> login(HttpServletRequest request) {
         var csrf=(CsrfToken)request.getAttribute(CsrfToken.class.getName());
         String message=request.getParameter("error")!=null?"<div class='notice error' role='alert'>账号或密码不正确，请重新输入。</div>":
+            request.getParameter("expired")!=null?"<div class='notice' role='alert'>登录页面已过期，请重新输入账号和密码。</div>":
             request.getParameter("logout")!=null?"<div class='notice' role='status'>你已退出 Alisa 账号。</div>":"";
         String body="""
             <!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
