@@ -104,4 +104,17 @@ class OAuthFlowTest {
         apps.disable("alice",app.clientId());assertNull(apps.findByClientId(app.clientId()));
         mvc.perform(get("/oauth2/authorize").with(user("alice")).param("client_id",app.clientId())).andExpect(status().isBadRequest());
     }
+    @Test void prefixedBrowserPagesKeepNavigationFormsAndRedirects() throws Exception {
+        var app=apps.create("prefix-owner","demo","Prefixed App",Set.of("http://localhost/callback"),Set.of("demo:target:read"),false);
+        mvc.perform(get("/auth/oauth/apps").contextPath("/auth").with(user("prefix-owner")))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("href='/auth/oauth/apps'")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("action='/auth/oauth/apps'")));
+        mvc.perform(get("/auth/oauth/consent").contextPath("/auth").with(user("alice"))
+            .param("client_id",app.clientId()).param("scope","demo:target:read").param("state","test-state"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("action='/auth/oauth2/authorize'")));
+        mvc.perform(post("/auth/oauth/apps/disable").contextPath("/auth").with(user("prefix-owner")).with(csrf()).param("clientId",app.clientId()))
+            .andExpect(status().isSeeOther()).andExpect(header().string("Location","/auth/oauth/apps"));
+    }
 }
