@@ -35,3 +35,6 @@ build/
 
 ### Environment Files ###
 .env
+# Versioned, non-secret GitOps build definitions
+!deploy/admin/build/
+!deploy/admin/build/**

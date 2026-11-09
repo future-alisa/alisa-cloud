@@ -5,7 +5,7 @@ const response = (status: number, value: unknown) => ({
   status,
   text: async () => (value === undefined ? "" : JSON.stringify(value)),
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("API authorization boundaries", () => {
   it("expires 401 sessions but preserves sessions on permission denial", async () => {
     const logout = vi.fn();
@@ -46,5 +46,12 @@ describe("API authorization boundaries", () => {
       "/api/v1/user/tenants/tenant%2Fa/members"
     );
     expect(tokenUserId("bad")).toBe("");
+  });
+  it("keeps API requests under the deployed admin prefix", async () => {
+    vi.stubEnv("BASE_URL", "/admin/");
+    const fetch = vi.fn().mockResolvedValue(response(200, {}));
+    vi.stubGlobal("fetch", fetch);
+    await createApi("signed-token", vi.fn())("/api/v1/user/tenants");
+    expect(fetch.mock.calls[0][0]).toBe("/admin/api/v1/user/tenants");
   });
 });

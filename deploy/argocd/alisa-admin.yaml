@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alisa-admin
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/future-alisa/alisa-cloud.git
+    targetRevision: main
+    path: deploy/admin/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: alisa-infra
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true

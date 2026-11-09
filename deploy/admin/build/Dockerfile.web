@@ -1,0 +1,4 @@
+ARG RUNTIME_IMAGE=registry.kind.internal:5000/library/nginx-unprivileged@sha256:7b5016a10b41639c79df145998c67da5e51ca0aaf80083e836f5168c1858a1da
+FROM ${RUNTIME_IMAGE}
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY html/ /usr/share/nginx/html/

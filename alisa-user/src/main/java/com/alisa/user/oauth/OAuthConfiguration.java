@@ -167,8 +167,20 @@ public class OAuthConfiguration {
         @Bean @Order(2)
         SecurityFilterChain browser(HttpSecurity http,AuthenticationProvider accountAuthentication) throws Exception {
             return http.securityMatcher("/login","/logout","/oauth/**").authenticationProvider(accountAuthentication)
+                .exceptionHandling(c->c.accessDeniedHandler((request,response,exception)->{
+                    String path=new org.springframework.web.util.UrlPathHelper().getPathWithinApplication(request);
+                    if(exception instanceof org.springframework.security.web.csrf.CsrfException && path.equals("/login")) {
+                        org.slf4j.LoggerFactory.getLogger(OAuthConfiguration.class).debug(
+                            "Rejected login CSRF: type={}, hasSessionCookie={}, validSession={}",
+                            exception.getClass().getSimpleName(),request.getRequestedSessionId()!=null,request.isRequestedSessionIdValid());
+                        // Reject the stale submission. A 303 fetches a new form without replaying passwords.
+                        response.setHeader("Cache-Control","no-store");
+                        response.setStatus(303);
+                        response.setHeader("Location",OAuthBrowserPaths.path(request,"/login?expired"));
+                    } else response.sendError(403);
+                }))
                 .authorizeHttpRequests(c->c.requestMatchers("/login").permitAll().anyRequest().authenticated())
-                .formLogin(c->c.defaultSuccessUrl("/oauth/apps",false)).logout(c->c.logoutSuccessUrl("/login")).build();
+                .formLogin(c->c.loginPage("/login").defaultSuccessUrl("/oauth/apps",false)).logout(c->c.logoutSuccessUrl("/login")).build();
         }
     }
 }
