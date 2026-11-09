@@ -11,7 +11,7 @@ def resource(kind,name,spec=None,data=None,wave=None):
  if spec is not None:x['spec']=spec
  if data is not None:x['data']=data
  items.append(x);return x
-x=resource('PersistentVolumeClaim','alisa-admin-auth-backups',{'accessModes':['ReadWriteOnce'],'resources':{'requests':{'storage':'2Gi'}}},wave=-30);x['metadata']['annotations']['argocd.argoproj.io/sync-options']='Prune=false,Delete=false'
+x=resource('PersistentVolumeClaim','alisa-admin-auth-backups',{'accessModes':['ReadWriteOnce'],'resources':{'requests':{'storage':'2Gi'}}},wave=-20);x['metadata']['annotations']['argocd.argoproj.io/sync-options']='Prune=false,Delete=false'
 config='''server:
   forward-headers-strategy: framework
   servlet:
@@ -48,7 +48,7 @@ alisa:
     issuer: https://alisa.vip.cpolar.cn/admin/auth
     applications:
       portal:
-        "portal:console:manage": 管理门户资源
+        "[portal:console:manage]": 管理门户资源
 '''
 resource('ConfigMap','alisa-admin-config',data={'application-admin.yml':config},wave=-30)
 api=registry+'alisa-admin-api@'+a.api_digest;web=registry+'alisa-admin-web@'+a.web_digest
