@@ -1,0 +1,119 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "name": "alisa-admin-auth-schema-e300ad46957f",
+    "namespace": "alisa-infra",
+    "annotations": {
+      "argocd.argoproj.io/sync-wave": "-20"
+    }
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "activeDeadlineSeconds": 900,
+    "template": {
+      "spec": {
+        "automountServiceAccountToken": false,
+        "dnsPolicy": "Default",
+        "imagePullSecrets": [
+          {
+            "name": "alisa-admin-registry-auth"
+          }
+        ],
+        "restartPolicy": "Never",
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 1000,
+          "runAsGroup": 1000,
+          "fsGroup": 1000
+        },
+        "containers": [
+          {
+            "name": "migrate",
+            "image": "registry.kind.internal:5000/alisa-admin-api@sha256:e300ad46957f1b1b5084b8a5c0553bff5aff34c918baa602d95f4870cb1c9212",
+            "command": [
+              "java",
+              "-Dloader.main=com.alisa.user.tools.AuthSchemaMigration",
+              "-cp",
+              "/app/alisa-user.jar",
+              "org.springframework.boot.loader.PropertiesLauncher",
+              "apply"
+            ],
+            "envFrom": [
+              {
+                "secretRef": {
+                  "name": "alisa-jwt"
+                }
+              },
+              {
+                "secretRef": {
+                  "name": "alisa-user-db"
+                }
+              }
+            ],
+            "env": [
+              {
+                "name": "AUTH_BACKUP_KEY",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "alisa-admin-bootstrap",
+                    "key": "AUTH_BACKUP_KEY"
+                  }
+                }
+              },
+              {
+                "name": "AUTH_BACKUP_DIRECTORY",
+                "value": "/backups"
+              },
+              {
+                "name": "JAVA_TOOL_OPTIONS",
+                "value": "-XX:MaxRAMPercentage=65"
+              }
+            ],
+            "volumeMounts": [
+              {
+                "name": "backups",
+                "mountPath": "/backups"
+              },
+              {
+                "name": "tmp",
+                "mountPath": "/tmp"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "512Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "name": "backups",
+            "persistentVolumeClaim": {
+              "claimName": "alisa-admin-auth-backups"
+            }
+          },
+          {
+            "name": "tmp",
+            "emptyDir": {}
+          }
+        ]
+      }
+    }
+  }
+}
