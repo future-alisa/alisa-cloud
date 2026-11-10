@@ -128,6 +128,28 @@ public class OAuthConfiguration {
             http.getConfigurer(OAuth2AuthorizationServerConfigurer.class).authorizationEndpoint(c->c.consentPage("/oauth/consent"));
             http.exceptionHandling(c->c.authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login")));
             http.addFilterBefore(new OncePerRequestFilter() {
+                @Override protected void doFilterInternal(jakarta.servlet.http.HttpServletRequest request,
+                        jakarta.servlet.http.HttpServletResponse response, jakarta.servlet.FilterChain chain)
+                        throws java.io.IOException, jakarta.servlet.ServletException {
+                    chain.doFilter(request, new jakarta.servlet.http.HttpServletResponseWrapper(response) {
+                        @Override public void sendRedirect(String location) throws java.io.IOException {
+                            // ForwardedHeaderFilter otherwise treats this native URI as a relative web path.
+                            String nativeCallback = OAuthApplications.SMALLOKR_NATIVE_CALLBACK + "?";
+                            String context = request.getContextPath();
+                            if (location.startsWith(context + nativeCallback)) {
+                                setStatus(SC_FOUND);
+                                setHeader("Location", location.substring(context.length()));
+                            } else if (location.startsWith(nativeCallback)) {
+                                setStatus(SC_FOUND);
+                                setHeader("Location", location);
+                            } else {
+                                super.sendRedirect(location);
+                            }
+                        }
+                    });
+                }
+            }, org.springframework.security.web.authentication.logout.LogoutFilter.class);
+            http.addFilterBefore(new OncePerRequestFilter() {
                 protected void doFilterInternal(jakarta.servlet.http.HttpServletRequest request,jakarta.servlet.http.HttpServletResponse response,jakarta.servlet.FilterChain chain)
                         throws java.io.IOException,jakarta.servlet.ServletException {
                     String route=new org.springframework.web.util.UrlPathHelper().getPathWithinApplication(request);

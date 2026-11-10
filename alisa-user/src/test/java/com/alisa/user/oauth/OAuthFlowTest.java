@@ -97,6 +97,8 @@ class OAuthFlowTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.active").value(false));
     }
     @Test void smallOkrNativePublicClientUsesExactCallbackAndPkce() throws Exception {
+        mvc = MockMvcBuilders.webAppContextSetup(context)
+            .addFilters(new org.springframework.web.filter.ForwardedHeaderFilter()).apply(springSecurity()).build();
         String redirect = "com.sunyubo.smallokr:/oauth2/callback";
         String scope = "smallokr:target:read";
         assertThrows(IllegalArgumentException.class, () ->
@@ -120,6 +122,8 @@ class OAuthFlowTest {
             start.getResponse().getRedirectedUrl()).build().getQueryParams();
         var approved = mvc.perform(post("/oauth2/authorize").with(user("alice")).with(csrf())
             .session((org.springframework.mock.web.MockHttpSession) start.getRequest().getSession(false))
+            .header("X-Forwarded-Prefix", "/admin/auth").header("X-Forwarded-Proto", "https")
+            .header("X-Forwarded-Host", "alisa.example")
             .param("client_id", client.clientId()).param("scope", scope)
             .param("state", URLDecoder.decode(consent.getFirst("state"), StandardCharsets.UTF_8)))
             .andExpect(status().is3xxRedirection()).andReturn();

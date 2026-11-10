@@ -111,8 +111,10 @@ public class OAuthApplications implements RegisteredClientRepository {
         jdbc.update("delete from oauth2_authorization_consent where registered_client_id=? and principal_name=?",client.getId(),user);
         audit(clientId,user,"USER_GRANT_REVOKED");
     }
+    static final String SMALLOKR_NATIVE_CALLBACK = "com.sunyubo.smallokr:/oauth2/callback";
+
     private void validateRedirect(String app, boolean publicClient, String value) {
-        if ("smallokr".equals(app) && publicClient && "com.sunyubo.smallokr:/oauth2/callback".equals(value)) {
+        if ("smallokr".equals(app) && publicClient && SMALLOKR_NATIVE_CALLBACK.equals(value)) {
             return;
         }
         URI uri=URI.create(value);
