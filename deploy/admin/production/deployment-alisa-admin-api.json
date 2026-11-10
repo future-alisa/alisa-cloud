@@ -44,7 +44,7 @@
         "containers": [
           {
             "name": "api",
-            "image": "registry.kind.internal:5000/alisa-admin-api@sha256:7437b87879a01d1c7483aa54903987e8b22f7440551761f4774998809779bae1",
+            "image": "registry.kind.internal:5000/alisa-admin-api@sha256:d1ca0616c562c375ac88393bb35feabaaaafd177832d8c2957cb38c097cb0127",
             "ports": [
               {
                 "name": "http",
