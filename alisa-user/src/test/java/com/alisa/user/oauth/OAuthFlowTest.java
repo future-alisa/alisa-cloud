@@ -30,6 +30,7 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 
 @SpringJUnitWebConfig(OAuthFlowTest.Config.class)
 @TestPropertySource(properties={"alisa.oauth.enabled=true","alisa.oauth.issuer=http://localhost","alisa.oauth.allow-loopback-redirects=true",
+    "alisa.oauth.applications.smallokr.[smallokr\\:target\\:read]=Read SmallOKR targets",
     "alisa.oauth.applications.demo.[demo\\:target\\:read]=Read targets","alisa.oauth.applications.demo.[demo\\:target\\:delete]=Delete targets"})
 class OAuthFlowTest {
     @org.springframework.boot.test.context.TestConfiguration @EnableWebSecurity @EnableWebMvc @Import({OAuthConfiguration.class,OAuthPages.class,OAuthLoginPage.class,com.alisa.user.service.AccessTokenService.class})
@@ -95,6 +96,44 @@ class OAuthFlowTest {
         mvc.perform(post("/oauth2/introspect").with(httpBasic(resource.clientId(),resource.clientSecret())).param("token",token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.active").value(false));
     }
+    @Test void smallOkrNativePublicClientUsesExactCallbackAndPkce() throws Exception {
+        String redirect = "com.sunyubo.smallokr:/oauth2/callback";
+        String scope = "smallokr:target:read";
+        assertThrows(IllegalArgumentException.class, () ->
+            apps.create("developer", "smallokr", "Native", Set.of(redirect), Set.of(scope), false));
+        assertThrows(IllegalArgumentException.class, () ->
+            apps.create("developer", "smallokr", "Native", Set.of(redirect + "/wrong"), Set.of(scope), true));
+        assertThrows(IllegalArgumentException.class, () ->
+            apps.create("developer", "demo", "Native", Set.of(redirect), Set.of("demo:target:read"), true));
+        var client = apps.create("developer", "smallokr", "Native", Set.of(redirect), Set.of(scope), true);
+        assertNull(client.clientSecret());
+
+        String verifier = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
+        var start = mvc.perform(get("/oauth2/authorize").with(user("alice"))
+            .param("response_type", "code").param("client_id", client.clientId()).param("redirect_uri", redirect)
+            .param("scope", scope).param("state", "native-state")
+            .param("code_challenge", challenge).param("code_challenge_method", "S256"))
+            .andExpect(status().is3xxRedirection()).andReturn();
+        var consent = org.springframework.web.util.UriComponentsBuilder.fromUriString(
+            start.getResponse().getRedirectedUrl()).build().getQueryParams();
+        var approved = mvc.perform(post("/oauth2/authorize").with(user("alice")).with(csrf())
+            .session((org.springframework.mock.web.MockHttpSession) start.getRequest().getSession(false))
+            .param("client_id", client.clientId()).param("scope", scope)
+            .param("state", URLDecoder.decode(consent.getFirst("state"), StandardCharsets.UTF_8)))
+            .andExpect(status().is3xxRedirection()).andReturn();
+        String callback = approved.getResponse().getRedirectedUrl();
+        assertTrue(callback.startsWith(redirect + "?"), callback);
+        var query = org.springframework.web.util.UriComponentsBuilder.fromUriString(callback).build().getQueryParams();
+        assertEquals("native-state", query.getFirst("state"));
+        String code = URLDecoder.decode(query.getFirst("code"), StandardCharsets.UTF_8);
+        mvc.perform(post("/oauth2/token").param("client_id", client.clientId())
+            .param("grant_type", "authorization_code").param("code", code).param("redirect_uri", redirect)
+            .param("code_verifier", verifier))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.access_token").isNotEmpty());
+    }
+
     @Test void registrationAndManagementCannotEscalatePermissions() throws Exception {
         assertThrows(IllegalArgumentException.class,()->apps.create("a","demo","Bad",Set.of("https://example.org/cb"),Set.of("demo:admin:write"),false));
         assertThrows(IllegalArgumentException.class,()->apps.create("a","demo","Bad",Set.of("http://example.org/cb"),Set.of("demo:target:read"),false));

@@ -53,7 +53,7 @@ public class OAuthApplications implements RegisteredClientRepository {
         var catalog = properties.catalog(app);
         if (name == null || name.isBlank() || name.length()>100 || redirects == null || redirects.isEmpty() || redirects.size()>10
             || scopes == null || scopes.isEmpty() || !catalog.keySet().containsAll(scopes)) throw new IllegalArgumentException("Invalid application or scopes");
-        redirects.forEach(this::validateRedirect);
+        redirects.forEach(uri -> validateRedirect(app, publicClient, uri));
         String id=UUID.randomUUID().toString(), clientId=UUID.randomUUID().toString(), secret=publicClient?null:secret();
         var builder = RegisteredClient.withId(id).clientId(clientId).clientName(name.trim()).clientIdIssuedAt(Instant.now())
             .clientAuthenticationMethod(publicClient?ClientAuthenticationMethod.NONE:ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
@@ -111,7 +111,10 @@ public class OAuthApplications implements RegisteredClientRepository {
         jdbc.update("delete from oauth2_authorization_consent where registered_client_id=? and principal_name=?",client.getId(),user);
         audit(clientId,user,"USER_GRANT_REVOKED");
     }
-    private void validateRedirect(String value) {
+    private void validateRedirect(String app, boolean publicClient, String value) {
+        if ("smallokr".equals(app) && publicClient && "com.sunyubo.smallokr:/oauth2/callback".equals(value)) {
+            return;
+        }
         URI uri=URI.create(value);
         boolean loopback=Set.of("localhost","127.0.0.1","[::1]").contains(Objects.toString(uri.getHost(),""));
         if(uri.getHost()==null || uri.getRawUserInfo()!=null || uri.getFragment()!=null || value.contains("*")
