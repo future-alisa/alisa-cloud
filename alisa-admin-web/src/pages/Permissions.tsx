@@ -15,6 +15,9 @@ import {
   Loading,
   Modal,
   PageTitle,
+  roleLabels,
+  shortId,
+  ScopePicker,
   useToast,
 } from "../ui";
 const actionNames: Record<string, string> = {
@@ -60,9 +63,14 @@ export default function PermissionsPage() {
         </div>
       </>
     );
+  const memberNames = new Map(members.data?.map((m) => [m.userId, m.username]));
+  const applicationNames = new Map(apps.data?.map((app) => [app.clientId, app.name]));
+  const subjectName = (permission: Permission) =>
+    (permission.subjectType === "APPLICATION" ? applicationNames : memberNames)
+      .get(permission.subjectId) ?? "";
   const filtered =
     permissions.data?.filter((p) =>
-      `${p.applicationId} ${p.subjectId} ${p.resourceType} ${p.resourceId} ${p.action}`
+      `${p.applicationId} ${subjectName(p)} ${p.subjectId} ${p.resourceType} ${p.resourceId} ${p.action}`
         .toLowerCase()
         .includes(search.toLowerCase())
     ) || [];
@@ -154,13 +162,8 @@ export default function PermissionsPage() {
                         >
                           {p.subjectType === "APPLICATION" ? "应用" : "用户"}
                         </Badge>
+                        {subjectName(p) && <strong>{subjectName(p)}</strong>}
                         <Id value={p.subjectId} />
-                        {p.subjectType === "APPLICATION" && (
-                          <small>
-                            {apps.data?.find((a) => a.clientId === p.subjectId)
-                              ?.name || ""}
-                          </small>
-                        )}
                       </div>
                     </td>
                     <td>{p.applicationId}</td>
@@ -209,9 +212,9 @@ export default function PermissionsPage() {
           members={members.data || []}
           clients={apps.data || []}
           onClose={() => setCreate(false)}
+          onSaved={permissions.reload}
           onDone={() => {
             setCreate(false);
-            permissions.reload();
             toast("资源授权已添加");
           }}
         />
@@ -241,12 +244,14 @@ function PermissionDialog({
   members,
   clients,
   onClose,
+  onSaved,
   onDone,
 }: {
   catalog: Catalog;
   members: Member[];
   clients: Client[];
   onClose: () => void;
+  onSaved: () => void;
   onDone: () => void;
 }) {
   const { api } = useSession();
@@ -259,7 +264,7 @@ function PermissionDialog({
   const [applicationId, setApplicationId] = useState(
     Object.keys(catalog)[0] || ""
   );
-  const [scope, setScope] = useState("");
+  const [scopes, setScopes] = useState<string[]>([]);
   const [resourceId, setResourceId] = useState("*");
   const clientOptions = clients.filter(
     (c) =>
@@ -267,25 +272,45 @@ function PermissionDialog({
   );
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const [resourceType, permissionAction] = scope
-      .slice(applicationId.length + 1)
-      .split(":");
-    if (!resourceType || !permissionAction) {
-      action.setError("请选择功能");
+    const id = resourceId.trim();
+    if (!scopes.length || !id) {
+      action.setError(scopes.length ? "请输入资源 ID" : "请选择至少一项功能");
+      return;
+    }
+    const grants = scopes.map((scope) => {
+      const [resourceType, action] = scope.slice(applicationId.length + 1).split(":");
+      return { scope, resourceType, action };
+    });
+    if (id !== "*" && new Set(grants.map((grant) => grant.resourceType)).size > 1) {
+      action.setError("指定资源 ID 时，请选择同一资源类型的功能");
       return;
     }
     await action.run(async () => {
-      await api(tenantPath(selected!.id, "/permissions"), {
-        method: "PUT",
-        body: {
-          applicationId,
-          subjectType,
-          subjectId,
-          resourceType,
-          resourceId: resourceId.trim(),
-          action: permissionAction,
-        },
-      });
+      let saved = 0;
+      try {
+        for (const grant of grants) {
+          await api(tenantPath(selected!.id, "/permissions"), {
+            method: "PUT",
+            body: {
+              applicationId,
+              subjectType,
+              subjectId,
+              resourceType: grant.resourceType,
+              resourceId: id,
+              action: grant.action,
+            },
+          });
+          saved++;
+        }
+      } catch (error) {
+        if (!saved) throw error;
+        setScopes(scopes.slice(saved));
+        const reason = error instanceof Error ? error.message : "保存失败";
+        throw new Error(`已保存 ${saved} 项，剩余 ${scopes.length - saved} 项可重试。
+${reason}`);
+      } finally {
+        if (saved) onSaved();
+      }
       onDone();
     });
   }
@@ -297,92 +322,85 @@ function PermissionDialog({
       busy={action.pending}
     >
       <form onSubmit={submit}>
-        <label>
-          接入业务
-          <select
-            required
-            value={applicationId}
-            onChange={(e) => {
-              setApplicationId(e.target.value);
-              setScope("");
-              setSubjectId("");
-            }}
-          >
-            {Object.keys(catalog).map((app) => (
-              <option key={app}>{app}</option>
-            ))}
-          </select>
-        </label>
-        <div className="form-grid">
+        <fieldset disabled={action.pending} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
           <label>
-            主体类型
+            接入业务
             <select
-              value={subjectType}
+              required
+              value={applicationId}
               onChange={(e) => {
-                setSubjectType(e.target.value as "USER" | "APPLICATION");
+                setApplicationId(e.target.value);
+                setScopes([]);
                 setSubjectId("");
               }}
             >
-              <option value="APPLICATION">后台应用</option>
-              <option value="USER">租户成员</option>
+              {Object.keys(catalog).map((app) => (
+                <option key={app}>{app}</option>
+              ))}
             </select>
           </label>
-          <label>
-            {subjectType === "APPLICATION" ? "选择应用" : "选择成员"}
-            <select
-              required
-              value={subjectId}
-              onChange={(e) => setSubjectId(e.target.value)}
-            >
-              <option value="">请选择</option>
-              {subjectType === "APPLICATION"
-                ? clientOptions.map((c) => (
-                    <option key={c.clientId} value={c.clientId}>
-                      {c.name}
-                      {c.approval === "APPROVED" ? "" : " · 尚未批准"}
-                    </option>
-                  ))
-                : members.map((m) => (
-                    <option key={m.userId} value={m.userId}>
-                      {m.userId}
-                    </option>
-                  ))}
-            </select>
-          </label>
-        </div>
-        {subjectType === "APPLICATION" && !clientOptions.length && (
-          <div className="info-note">
-            当前业务没有可授权的后台应用，请先在「应用与审批」中登记。
+          <div className="form-grid">
+            <label>
+              主体类型
+              <select
+                value={subjectType}
+                onChange={(e) => {
+                  setSubjectType(e.target.value as "USER" | "APPLICATION");
+                  setSubjectId("");
+                }}
+              >
+                <option value="APPLICATION">后台应用</option>
+                <option value="USER">租户成员</option>
+              </select>
+            </label>
+            <label>
+              {subjectType === "APPLICATION" ? "选择应用" : "选择成员"}
+              <select
+                required
+                value={subjectId}
+                onChange={(e) => setSubjectId(e.target.value)}
+              >
+                <option value="">请选择</option>
+                {subjectType === "APPLICATION"
+                  ? clientOptions.map((c) => (
+                      <option key={c.clientId} value={c.clientId}>
+                        {c.name}
+                        {c.approval === "APPROVED" ? "" : " · 尚未批准"}
+                      </option>
+                    ))
+                  : members.map((m) => (
+                      <option key={m.userId} value={m.userId}>
+                        {m.username || shortId(m.userId)} · {roleLabels[m.role]}
+                      </option>
+                    ))}
+              </select>
+            </label>
           </div>
-        )}
-        <label>
-          允许的功能
-          <select
-            required
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-          >
-            <option value="">请选择功能</option>
-            {Object.entries(catalog[applicationId] || {}).map(
-              ([value, label]) => (
-                <option key={value} value={value}>
-                  {label} · {value}
-                </option>
-              )
-            )}
-          </select>
-        </label>
-        <label>
-          资源 ID
-          <input
-            required
-            maxLength={191}
-            value={resourceId}
-            onChange={(e) => setResourceId(e.target.value)}
-            placeholder="输入资源 ID，或 *"
-          />
-          <small>* 表示当前租户内该类型的全部资源，不包含其他租户。</small>
-        </label>
+          {subjectType === "APPLICATION" && !clientOptions.length && (
+            <div className="info-note">
+              当前业务没有可授权的后台应用，请先在「应用与审批」中登记。
+            </div>
+          )}
+          <fieldset style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+            <legend>允许的功能</legend>
+            <ScopePicker
+              catalog={catalog[applicationId] || {}}
+              selected={scopes}
+              onChange={setScopes}
+            />
+          </fieldset>
+          <label>
+            资源 ID
+            <input
+              required
+              maxLength={191}
+              value={resourceId}
+              onChange={(e) => setResourceId(e.target.value)}
+              placeholder="输入资源 ID，或 *"
+            />
+            <small>* 表示当前租户内该类型的全部资源，不包含其他租户。</small>
+          </label>
+        </fieldset>
         <Alert>{action.error}</Alert>
         <FormFooter
           onClose={onClose}

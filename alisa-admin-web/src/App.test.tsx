@@ -195,3 +195,34 @@ it("uses an existing email code and keeps the recovery form open when the code i
     body: JSON.stringify({ email: "managed@example.org", code: "123456", newPassword: "Test password 42" }),
   }));
 });
+
+it("opens an invitation after login and waits for the invited user to confirm", async () => {
+  const request = vi.fn((path: string) =>
+    respond(path === "/api/v1/user/tenants" ? [] : path.endsWith("/signin")
+      ? { code: 200, data: jwt } : {})
+  );
+  vi.stubGlobal("fetch", request);
+  render(
+    <MemoryRouter initialEntries={["/tenants#tenantId=tenant-1&invitationId=invite-1&invite=one-time%2Btoken"]}>
+      <SessionProvider>
+        <App />
+      </SessionProvider>
+    </MemoryRouter>
+  );
+
+  fireEvent.change(screen.getByLabelText("账号"), { target: { value: "test" } });
+  fireEvent.change(screen.getByLabelText("密码"), { target: { value: "test-password" } });
+  fireEvent.click(screen.getByRole("button", { name: /登录控制台/ }));
+  const dialog = await screen.findByRole("dialog", { name: "接受租户邀请" });
+  const acceptance = "/api/v1/user/tenants/tenant-1/invitations/accept";
+  expect(request.mock.calls.some(([path]) => path === acceptance)).toBe(false);
+  fireEvent.click(within(dialog).getByRole("button", { name: "加入租户" }));
+  await waitFor(() => expect(request).toHaveBeenCalledWith(
+    acceptance,
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ invitationId: "invite-1", token: "one-time+token" }),
+    })
+  ));
+  expect(await screen.findByText("已加入租户")).toBeInTheDocument();
+});

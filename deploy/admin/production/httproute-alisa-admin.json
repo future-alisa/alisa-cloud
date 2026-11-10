@@ -67,6 +67,146 @@
             "port": 8080
           }
         ]
+      },
+      {
+        "matches": [
+          {
+            "path": {
+              "type": "Exact",
+              "value": "/alisa-gateway/api/v1/user/tenancy"
+            },
+            "method": "GET"
+          }
+        ],
+        "filters": [
+          {
+            "type": "URLRewrite",
+            "urlRewrite": {
+              "path": {
+                "type": "ReplaceFullPath",
+                "replaceFullPath": "/api/v1/user/tenancy"
+              }
+            }
+          }
+        ],
+        "backendRefs": [
+          {
+            "name": "alisa-admin-web",
+            "port": 8080
+          }
+        ]
+      },
+      {
+        "matches": [
+          {
+            "path": {
+              "type": "Exact",
+              "value": "/alisa-gateway/api/v1/user/tenancy"
+            },
+            "method": "OPTIONS"
+          }
+        ],
+        "filters": [
+          {
+            "type": "URLRewrite",
+            "urlRewrite": {
+              "path": {
+                "type": "ReplaceFullPath",
+                "replaceFullPath": "/api/v1/user/tenancy"
+              }
+            }
+          }
+        ],
+        "backendRefs": [
+          {
+            "name": "alisa-admin-web",
+            "port": 8080
+          }
+        ]
+      },
+      {
+        "matches": [
+          {
+            "path": {
+              "type": "PathPrefix",
+              "value": "/alisa-gateway/api/v1/user/tenants"
+            },
+            "method": "GET"
+          }
+        ],
+        "filters": [
+          {
+            "type": "URLRewrite",
+            "urlRewrite": {
+              "path": {
+                "type": "ReplacePrefixMatch",
+                "replacePrefixMatch": "/api/v1/user/tenants"
+              }
+            }
+          }
+        ],
+        "backendRefs": [
+          {
+            "name": "alisa-admin-web",
+            "port": 8080
+          }
+        ]
+      },
+      {
+        "matches": [
+          {
+            "path": {
+              "type": "PathPrefix",
+              "value": "/alisa-gateway/api/v1/user/tenants"
+            },
+            "method": "POST"
+          }
+        ],
+        "filters": [
+          {
+            "type": "URLRewrite",
+            "urlRewrite": {
+              "path": {
+                "type": "ReplacePrefixMatch",
+                "replacePrefixMatch": "/api/v1/user/tenants"
+              }
+            }
+          }
+        ],
+        "backendRefs": [
+          {
+            "name": "alisa-admin-web",
+            "port": 8080
+          }
+        ]
+      },
+      {
+        "matches": [
+          {
+            "path": {
+              "type": "PathPrefix",
+              "value": "/alisa-gateway/api/v1/user/tenants"
+            },
+            "method": "OPTIONS"
+          }
+        ],
+        "filters": [
+          {
+            "type": "URLRewrite",
+            "urlRewrite": {
+              "path": {
+                "type": "ReplacePrefixMatch",
+                "replacePrefixMatch": "/api/v1/user/tenants"
+              }
+            }
+          }
+        ],
+        "backendRefs": [
+          {
+            "name": "alisa-admin-web",
+            "port": 8080
+          }
+        ]
       }
     ]
   }
