@@ -20,6 +20,7 @@ public class OAuthLoginPage {
         String message=request.getParameter("error")!=null?"<div class='notice error' role='alert'>账号或密码不正确，请重新输入。</div>":
             request.getParameter("expired")!=null?"<div class='notice' role='alert'>登录页面已过期，请重新输入账号和密码。</div>":
             request.getParameter("logout")!=null?"<div class='notice' role='status'>你已退出 Alisa 账号。</div>":"";
+        String nonce=java.util.UUID.randomUUID().toString();
         String body="""
             <!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
             <title>登录 Alisa 账号</title><style>
@@ -30,9 +31,26 @@ public class OAuthLoginPage {
             "<input type='hidden' name='"+HtmlUtils.htmlEscape(csrf.getParameterName())+"' value='"+HtmlUtils.htmlEscape(csrf.getToken())+"'>"+
             "<label for='username'>用户名</label><input id='username' name='username' autocomplete='username' placeholder='输入 Alisa 用户名' required autofocus maxlength='100'>"+
             "<label for='password'>密码</label><input id='password' name='password' type='password' autocomplete='current-password' placeholder='输入密码' required>"+
-            "<button type='submit'>登录并继续 →</button></form><p><a href='"+HtmlUtils.htmlEscape(passwordResetUrl)+"'>忘记密码？</a></p><p class='foot'>由 Alisa 统一账号提供身份验证<br>应用权限将在下一步确认</p></main></body></html>";
+            "<button type='submit'>登录并继续 →</button></form><p><a href='"+HtmlUtils.htmlEscape(passwordResetUrl)+"'>忘记密码？</a></p><p class='foot'>由 Alisa 统一账号提供身份验证<br>应用权限将在下一步确认</p></main><script nonce='"+nonce+"'>"+
+            """
+            const form = document.querySelector('form');
+            const button = form.querySelector('button');
+            form.addEventListener('submit', event => {
+                if (button.disabled) {
+                    event.preventDefault();
+                    return;
+                }
+                button.disabled = true;
+                button.textContent = '正在登录…';
+            });
+            window.addEventListener('pageshow', () => {
+                button.disabled = false;
+                button.textContent = '登录并继续 →';
+            });
+            </script></body></html>
+            """;
         return ResponseEntity.ok().contentType(new MediaType("text","html",StandardCharsets.UTF_8)).cacheControl(CacheControl.noStore())
-            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self' com.sunyubo.smallokr:; frame-ancestors 'none'; base-uri 'none'")
+            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "'; form-action 'self' com.sunyubo.smallokr:; frame-ancestors 'none'; base-uri 'none'")
             .header("Referrer-Policy","no-referrer").body(body);
     }
 }

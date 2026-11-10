@@ -3,6 +3,7 @@ package com.alisa.user.oauth;
 import com.alisa.identity.*;
 import com.alisa.user.provider.IdentityProviderRegistry;
 import com.alisa.security.*;
+import java.net.URI;
 import java.util.*;
 import org.springframework.boot.autoconfigure.condition.*;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -25,6 +26,7 @@ import org.springframework.security.oauth2.server.authorization.token.*;
 import org.springframework.security.oauth2.server.authorization.web.OAuth2ClientAuthenticationFilter;
 import org.springframework.security.web.*;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Configuration(proxyBeanMethods=false)
@@ -202,6 +204,29 @@ public class OAuthConfiguration {
             },org.springframework.security.web.authentication.www.BasicAuthenticationFilter.class);
             return http.build();
         }
+        private String staleLoginDestination(jakarta.servlet.http.HttpServletRequest request,
+                jakarta.servlet.http.HttpServletResponse response) {
+            var authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()
+                    || authentication instanceof AnonymousAuthenticationToken) {
+                return OAuthBrowserPaths.path(request, "/login?expired");
+            }
+            String authorizePath = OAuthBrowserPaths.path(request, "/oauth2/authorize");
+            var saved = new HttpSessionRequestCache().getRequest(request, response);
+            if (saved != null && "GET".equals(saved.getMethod())) {
+                try {
+                    var destination = URI.create(saved.getRedirectUrl());
+                    if (authorizePath.equals(destination.getRawPath()) && destination.getRawQuery() != null) {
+                        // Only resume a local authorization GET. Never reuse a saved host or a submitted target.
+                        return authorizePath + "?" + destination.getRawQuery();
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    // A malformed saved request can be restarted from the client application.
+                }
+            }
+            return OAuthBrowserPaths.path(request, "/oauth/apps");
+        }
+
         @Bean @Order(2)
         SecurityFilterChain browser(HttpSecurity http,AuthenticationProvider accountAuthentication,
                 com.alisa.user.service.AccessTokenService tokens) throws Exception {
@@ -222,10 +247,10 @@ public class OAuthConfiguration {
                         org.slf4j.LoggerFactory.getLogger(OAuthConfiguration.class).debug(
                             "Rejected login CSRF: type={}, hasSessionCookie={}, validSession={}",
                             exception.getClass().getSimpleName(),request.getRequestedSessionId()!=null,request.isRequestedSessionIdValid());
-                        // Reject the stale submission. A 303 fetches a new form without replaying passwords.
+                        // Reject the stale submission and recover with a safe GET.
                         response.setHeader("Cache-Control","no-store");
                         response.setStatus(303);
-                        response.setHeader("Location",OAuthBrowserPaths.path(request,"/login?expired"));
+                        response.setHeader("Location",staleLoginDestination(request,response));
                     } else response.sendError(403);
                 }))
                 .authorizeHttpRequests(c->c.requestMatchers("/login").permitAll().anyRequest().authenticated())
