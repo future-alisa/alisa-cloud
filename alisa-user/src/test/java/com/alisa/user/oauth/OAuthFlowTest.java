@@ -172,6 +172,41 @@ class OAuthFlowTest {
         mvc.perform(get("/login").param("error","<script>bad</script>"))
             .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("<script>bad</script>"))));
     }
+    @Test void loginFormAllowsOnlyTheRegisteredCallbackFromTheSavedRequest() throws Exception {
+        String callback = "http://127.0.0.1:3000/api/auth/callback";
+        var app = apps.create("alice","demo","Portal callback",Set.of(callback),Set.of("demo:target:read"),false);
+        var saved = new org.springframework.mock.web.MockHttpServletRequest("GET", "/oauth2/authorize");
+        saved.setParameter("client_id", app.clientId());
+        saved.setParameter("redirect_uri", callback);
+        var cache = new org.springframework.security.web.savedrequest.HttpSessionRequestCache();
+        cache.saveRequest(saved, new org.springframework.mock.web.MockHttpServletResponse());
+        var session = (org.springframework.mock.web.MockHttpSession) saved.getSession(false);
+        mvc.perform(get("/login").session(session))
+            .andExpect(header().string("Content-Security-Policy",
+                org.hamcrest.Matchers.containsString("form-action 'self' http://127.0.0.1:3000;")));
+        saved.setParameter("redirect_uri", "https://unregistered.example/callback");
+        cache.saveRequest(saved, new org.springframework.mock.web.MockHttpServletResponse());
+        mvc.perform(get("/login").session(session))
+            .andExpect(header().string("Content-Security-Policy",
+                org.hamcrest.Matchers.containsString("form-action 'self';")));
+    }
+
+    @Test void staleLoginWithAnAuthenticatedSessionResumesOnlySavedAuthorization() throws Exception {
+        var cached = new org.springframework.mock.web.MockHttpServletRequest("GET", "/auth/oauth2/authorize");
+        cached.setContextPath("/auth");
+        cached.setServerName("untrusted.example");
+        cached.setQueryString("client_id=demo&state=encoded%2Bstate");
+        var cache = new org.springframework.security.web.savedrequest.HttpSessionRequestCache();
+        cache.saveRequest(cached, new org.springframework.mock.web.MockHttpServletResponse());
+        var session = (org.springframework.mock.web.MockHttpSession) cached.getSession(false);
+        mvc.perform(post("/auth/login").contextPath("/auth").session(session).with(user("alice"))
+                .param("username","do-not-authenticate").param("password","do-not-replay"))
+            .andExpect(status().isSeeOther())
+            .andExpect(header().string("Location","/auth/oauth2/authorize?client_id=demo&state=encoded%2Bstate&continue"));
+        mvc.perform(post("/auth/login").contextPath("/auth").with(user("alice")))
+            .andExpect(status().isSeeOther()).andExpect(header().string("Location","/auth/oauth/apps"));
+    }
+
     @Test void staleLoginCsrfReturnsFreshFormWithoutAuthenticating() throws Exception {
         var form=mvc.perform(get("/login")).andExpect(status().isOk()).andReturn();
         var csrf=(org.springframework.security.web.csrf.CsrfToken)form.getRequest().getAttribute(org.springframework.security.web.csrf.CsrfToken.class.getName());
