@@ -22,6 +22,9 @@
       "metadata": {
         "labels": {
           "app.kubernetes.io/name": "alisa-admin-api"
+        },
+        "annotations": {
+          "alisa.cloud/admin-config-sha256": "a4cab4ec38fdd38fbcc0b30f562a0676a8c9c66b2c17e32eca96acd5eccb63ae"
         }
       },
       "spec": {
