@@ -32,7 +32,7 @@ public class OAuthLoginPage {
             "<label for='password'>密码</label><input id='password' name='password' type='password' autocomplete='current-password' placeholder='输入密码' required>"+
             "<button type='submit'>登录并继续 →</button></form><p><a href='"+HtmlUtils.htmlEscape(passwordResetUrl)+"'>忘记密码？</a></p><p class='foot'>由 Alisa 统一账号提供身份验证<br>应用权限将在下一步确认</p></main></body></html>";
         return ResponseEntity.ok().contentType(new MediaType("text","html",StandardCharsets.UTF_8)).cacheControl(CacheControl.noStore())
-            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self' com.sunyubo.smallokr:; frame-ancestors 'none'; base-uri 'none'")
             .header("Referrer-Policy","no-referrer").body(body);
     }
 }

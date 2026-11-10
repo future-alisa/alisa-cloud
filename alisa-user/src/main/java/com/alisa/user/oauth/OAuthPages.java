@@ -28,8 +28,11 @@ public class OAuthPages {
     private String input(String name,String value) { return "<input type='hidden' name='"+escape(name)+"' value='"+escape(value)+"'>"; }
     private String csrf(HttpServletRequest request) { var token=(CsrfToken)request.getAttribute(CsrfToken.class.getName()); return input(token.getParameterName(),token.getToken()); }
     private ResponseEntity<String> page(String title,String content) {
+        return page(title, content, false);
+    }
+    private ResponseEntity<String> page(String title,String content,boolean nativeCallback) {
         return ResponseEntity.ok().contentType(new MediaType("text","html",java.nio.charset.StandardCharsets.UTF_8)).cacheControl(CacheControl.noStore())
-            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'"+(nativeCallback?" com.sunyubo.smallokr:":"")+"; frame-ancestors 'none'; base-uri 'none'")
             .body(OAuthBrowserPaths.html("<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+escape(title)+"</title><style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:16px;color:#243346}section{padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:8px}button{cursor:pointer}code{overflow-wrap:anywhere}a{color:#2563ab}</style><h1>"+escape(title)+"</h1><nav><a href='/oauth/apps'>我的应用</a> · <a href='/oauth/connections'>已授权应用</a></nav>"+content+"</html>"));
     }
     @GetMapping("/apps")
@@ -87,6 +90,6 @@ public class OAuthPages {
             html.append("<label><input type='checkbox' name='scope' value='").append(escape(s)).append("' ").append(approved?"checked disabled":"").append("> ").append(escape(catalog.get(s))).append(approved?"（此前已授权，可在已授权应用中撤销）":"").append("</label>");
         }
         html.append("<button>同意所选功能</button></form><form method='post' action='/oauth2/authorize'>").append(csrf(request)).append(input("client_id",clientId)).append(input("state",state)).append("<button>拒绝</button></form></section>");
-        return page("授权确认",html.toString());
+        return page("授权确认",html.toString(),client.getRedirectUris().contains(OAuthApplications.SMALLOKR_NATIVE_CALLBACK));
     }
 }
