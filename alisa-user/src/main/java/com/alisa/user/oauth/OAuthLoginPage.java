@@ -1,10 +1,14 @@
 package com.alisa.user.oauth;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.net.URI;
+import java.util.Set;
 import java.nio.charset.StandardCharsets;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.HtmlUtils;
 
@@ -14,8 +18,31 @@ import org.springframework.web.util.HtmlUtils;
 public class OAuthLoginPage {
     @org.springframework.beans.factory.annotation.Value("${alisa.oauth.password-reset-url:/admin/reset-password}")
     private String passwordResetUrl;
+    private final OAuthApplications apps;
+
+    public OAuthLoginPage(OAuthApplications apps) {
+        this.apps = apps;
+    }
+
+    private String callbackSources(HttpServletRequest request, HttpServletResponse response) {
+        var saved = new HttpSessionRequestCache().getRequest(request, response);
+        if (saved == null || !"GET".equals(saved.getMethod())
+                || !OAuthBrowserPaths.path(request, "/oauth2/authorize").equals(URI.create(saved.getRedirectUrl()).getRawPath())) {
+            return "";
+        }
+        var clientIds = saved.getParameterValues("client_id");
+        if (clientIds == null || clientIds.length != 1) return "";
+        var client = apps.findByClientId(clientIds[0]);
+        if (client == null) return "";
+        var redirects = saved.getParameterValues("redirect_uri");
+        if (redirects == null && client.getRedirectUris().size() == 1)
+            return OAuthBrowserPaths.formCallbackSources(client.getRedirectUris());
+        if (redirects == null || redirects.length != 1 || !client.getRedirectUris().contains(redirects[0])) return "";
+        return OAuthBrowserPaths.formCallbackSources(Set.of(redirects[0]));
+    }
+
     @GetMapping("/login")
-    public ResponseEntity<String> login(HttpServletRequest request) {
+    public ResponseEntity<String> login(HttpServletRequest request, HttpServletResponse response) {
         var csrf=(CsrfToken)request.getAttribute(CsrfToken.class.getName());
         String message=request.getParameter("error")!=null?"<div class='notice error' role='alert'>账号或密码不正确，请重新输入。</div>":
             request.getParameter("expired")!=null?"<div class='notice' role='alert'>登录页面已过期，请重新输入账号和密码。</div>":
@@ -50,7 +77,7 @@ public class OAuthLoginPage {
             </script></body></html>
             """;
         return ResponseEntity.ok().contentType(new MediaType("text","html",StandardCharsets.UTF_8)).cacheControl(CacheControl.noStore())
-            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "'; form-action 'self' com.sunyubo.smallokr:; frame-ancestors 'none'; base-uri 'none'")
+            .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "'; form-action 'self'" + callbackSources(request, response) + "; frame-ancestors 'none'; base-uri 'none'")
             .header("Referrer-Policy","no-referrer").body(body);
     }
 }
