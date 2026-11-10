@@ -1,5 +1,6 @@
+import { readInvitation } from "./invitationLink";
 import { sharedSignInUrl } from "./state";
-import { Fragment, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   Link,
   NavLink,
@@ -7,6 +8,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import {
   AppWindow,
@@ -61,7 +63,10 @@ function Brand() {
     </div>
   );
 }
+const pendingInvitationKey = "alisa.admin.pending-invitation";
+
 function Login() {
+  const { pathname, hash } = useLocation();
   const { login } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -130,7 +135,12 @@ function Login() {
           <h2>登录管理控制台</h2>
           <p>使用你的 Alisa 账号继续。</p>
           {sharedSignInUrl && <a className="button primary" href={sharedSignInUrl}
-            onClick={() => sessionStorage.removeItem("alisa.admin.signed-out")}>
+            onClick={() => {
+              if (pathname === "/tenants" && readInvitation(hash)) {
+                sessionStorage.setItem(pendingInvitationKey, hash);
+              }
+              sessionStorage.removeItem("alisa.admin.signed-out");
+            }}>
             使用 Alisa 账号继续
           </a>}
           <form onSubmit={submit}>
@@ -367,6 +377,17 @@ function Layout() {
 }
 export default function App() {
   const { session, checkingSession } = useSession();
+  const { pathname, hash } = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!session) return;
+    const pending = sessionStorage.getItem(pendingInvitationKey);
+    if (!pending) return;
+    sessionStorage.removeItem(pendingInvitationKey);
+    if (!readInvitation(hash) && readInvitation(pending)) {
+      navigate({ pathname: "/tenants", hash: pending }, { replace: true });
+    }
+  }, [session, hash, navigate]);
   if (checkingSession) return <main role="status">正在确认 Alisa 登录状态…</main>;
   return (
     <ToastProvider>
@@ -384,6 +405,8 @@ export default function App() {
               <TenantProvider key={session.userId}>
                 <Layout />
               </TenantProvider>
+            ) : pathname === "/tenants" && readInvitation(hash) ? (
+              <Login />
             ) : (
               <Navigate to="/login" replace />
             )

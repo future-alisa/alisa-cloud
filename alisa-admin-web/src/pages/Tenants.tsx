@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AppWindow,
   ArrowRight,
@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
+import { readInvitation } from "../invitationLink";
 import { tenantPath } from "../api";
 import { isAdmin, useAction, useQuery, useSession, useTenants } from "../state";
 import type { Client, Member } from "../types";
@@ -34,6 +35,9 @@ import {
 } from "../ui";
 export function TenantsPage() {
   const { tenants, selected, select, loading, error, reload } = useTenants();
+  const { hash } = useLocation();
+  const navigate = useNavigate();
+  const invitation = readInvitation(hash);
   const [modal, setModal] = useState<"create" | "accept" | null>(null);
   const [search, setSearch] = useState("");
   const [scope, setScope] = useState<"mine" | "platform">("mine");
@@ -146,7 +150,17 @@ export function TenantsPage() {
           ))}
         </div>
       )}
-      {modal && <TenantDialog kind={modal} onClose={() => setModal(null)} />}
+      {(invitation || modal) && (
+        <TenantDialog
+          key={hash}
+          kind={invitation ? "accept" : modal!}
+          invitation={invitation}
+          onClose={() => {
+            setModal(null);
+            if (invitation) navigate("/tenants", { replace: true });
+          }}
+        />
+      )}
     </>
   );
 }
@@ -249,9 +263,11 @@ function PlatformTenantManagement({ platform, search }: {
 
 function TenantDialog({
   kind,
+  invitation,
   onClose,
 }: {
   kind: "create" | "accept";
+  invitation: ReturnType<typeof readInvitation>;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
@@ -266,7 +282,7 @@ function TenantDialog({
   async function submit(event: FormEvent) {
     event.preventDefault();
     await action.run(async () => {
-      let id = tenant.trim();
+      let id = invitation?.tenantId ?? tenant.trim();
       if (kind === "create") {
         const result = await api<{ tenantId: string }>("/api/v1/user/tenants", {
           method: "POST",
@@ -276,13 +292,16 @@ function TenantDialog({
       } else
         await api(tenantPath(id, "/invitations/accept"), {
           method: "POST",
-          body: { invitationId: invitationId.trim(), token: token.trim() },
+          body: {
+            invitationId: invitation?.invitationId ?? invitationId.trim(),
+            token: invitation?.token ?? token.trim(),
+          },
         });
       reload();
       select(id);
-      onClose();
+      if (!invitation) onClose();
       toast(kind === "create" ? "租户已创建" : "已加入租户");
-      navigate("/");
+      navigate("/", { replace: Boolean(invitation) });
     });
   }
   return (
@@ -291,7 +310,9 @@ function TenantDialog({
       description={
         kind === "create"
           ? "租户拥有独立的成员、应用、授权策略和审计记录。"
-          : "填写管理员提供的邀请信息，邀请只能由指定账号接受。"
+          : invitation
+            ? "确认使用当前账号加入。邀请只能由指定账号接受。"
+            : "填写管理员提供的邀请信息，邀请只能由指定账号接受。"
       }
       onClose={onClose}
       busy={action.pending}
@@ -310,6 +331,8 @@ function TenantDialog({
             />
             <small>你将成为这个租户的所有者。</small>
           </label>
+        ) : invitation ? (
+          <p>租户 ID：{invitation.tenantId}</p>
         ) : (
           <>
             <label>

@@ -7,6 +7,8 @@ import {
   UserMinus,
   Users,
 } from "lucide-react";
+import { useHref } from "react-router-dom";
+import { invitationHash } from "../invitationLink";
 import { tenantPath } from "../api";
 import { isAdmin, useAction, useQuery, useSession, useTenants } from "../state";
 import type { CreatedInvitation, Invitation, Member, Role } from "../types";
@@ -35,6 +37,7 @@ export default function MembersPage() {
   const admin = isAdmin(selected);
   const owner = selected?.role === "OWNER";
   const members = useQuery<Member[]>(tenantPath(selected!.id, "/members"));
+  const tenantsHref = useHref("/tenants");
   const invites = useQuery<Invitation[]>(
     admin ? tenantPath(selected!.id, "/invitations") : null
   );
@@ -333,9 +336,13 @@ export default function MembersPage() {
         <SecretModal
           title="邀请已生成"
           values={[
-            { label: "租户 ID", value: selected!.id },
-            { label: "邀请 ID", value: secret.id },
-            { label: "邀请凭据", value: secret.token },
+            {
+              label: "一次性邀请链接",
+              value: new URL(
+                tenantsHref + invitationHash(selected!.id, secret.id, secret.token),
+                window.location.origin
+              ).href,
+            },
           ]}
           onClose={() => setSecret(null)}
         />
