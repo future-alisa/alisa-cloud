@@ -1,0 +1,13 @@
+alisa:
+  tenancy:
+    enabled: true
+  authorization:
+    enabled: true
+    applications:
+      science-community: tenant
+  oauth:
+    enabled: true
+    applications:
+      science-community:
+        "[science-community:community:read]": 查看社区内容
+        "[science-community:community:write]": 创建和修改社区内容

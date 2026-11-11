@@ -93,7 +93,7 @@ public class OAuthConfiguration {
                 throw new IllegalArgumentException("OAuth issuer requires HTTPS");
             return AuthorizationServerSettings.builder().issuer(props.getIssuer()).build();
         }
-        @Bean OAuth2TokenCustomizer<OAuth2TokenClaimsContext> delegatedClaims(OAuthApplications clients) {
+        @Bean OAuth2TokenCustomizer<OAuth2TokenClaimsContext> delegatedClaims(OAuthApplications clients, com.alisa.user.mapper.UserMapper users) {
             return context->{
                 String app=clients.applicationId(context.getRegisteredClient().getClientId());
                 if(app==null || clients.resource(context.getRegisteredClient().getClientId())) throw new IllegalStateException("Client cannot issue delegated tokens");
@@ -103,6 +103,9 @@ public class OAuthConfiguration {
                 if(!machine) {
                     clients.requireTenantUser(context.getRegisteredClient().getClientId(),context.getPrincipal().getName());
                     context.getClaims().claim("userId",context.getPrincipal().getName());
+                    var account = users.findUserByID(context.getPrincipal().getName());
+                    if (account == null) throw new IllegalStateException("OAuth account no longer exists");
+                    context.getClaims().claim("username", account.getUsername());
                 }
                 context.getClaims().claim("identity_type",machine?"application":"user").claim("tenant_id",info.tenantId())
                     .claim("application_id",app).audience(new ArrayList<>(List.of(app)));

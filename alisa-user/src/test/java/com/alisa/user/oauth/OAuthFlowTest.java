@@ -40,6 +40,18 @@ class OAuthFlowTest {
             new ResourceDatabasePopulator(new ClassPathResource("sql/oauth.sql")).execute(ds);return ds;
         }
         @Bean JdbcTemplate jdbcTemplate(DataSource ds) { return new JdbcTemplate(ds); }
+        @Bean com.alisa.user.mapper.UserMapper users() {
+            var mapper = org.mockito.Mockito.mock(com.alisa.user.mapper.UserMapper.class);
+            org.mockito.Mockito.when(mapper.findUserByID(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> {
+                    var account = new com.alisa.user.entity.User();
+                    String id = invocation.getArgument(0);
+                    account.setId(id);
+                    account.setUsername("display-" + id);
+                    return account;
+                });
+            return mapper;
+        }
         @Bean IdentityProviderRegistry providers() { return new IdentityProviderRegistry(List.of()); }
         @Bean com.alisa.authorization.AuthorizationEngine engine() { return new com.alisa.authorization.AuthorizationEngine(List.of(),Map.of()); }
     }
@@ -86,7 +98,8 @@ class OAuthFlowTest {
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->access.requireFirstPartyUserId("Bearer "+token));
         mvc.perform(post("/oauth2/introspect").with(httpBasic(resource.clientId(),resource.clientSecret())).param("token",token))
             .andExpect(status().isOk()).andExpect(jsonPath("$.active").value(true)).andExpect(jsonPath("$.scope").value("demo:target:read"))
-            .andExpect(jsonPath("$.userId").value("alice")).andExpect(jsonPath("$.application_id").value("demo"));
+            .andExpect(jsonPath("$.userId").value("alice")).andExpect(jsonPath("$.application_id").value("demo"))
+            .andExpect(jsonPath("$.username").value("display-alice"));
         mvc.perform(post("/oauth2/introspect").with(httpBasic(app.clientId(),app.clientSecret())).param("token",token)).andExpect(status().isForbidden());
         mvc.perform(post("/oauth2/token").with(httpBasic(resource.clientId(),resource.clientSecret())).param("grant_type","client_credentials")).andExpect(status().isForbidden());
         apps.revoke("someone-else",app.clientId());
