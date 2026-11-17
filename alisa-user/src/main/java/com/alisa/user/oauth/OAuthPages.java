@@ -28,12 +28,16 @@ public class OAuthPages {
     private String input(String name,String value) { return "<input type='hidden' name='"+escape(name)+"' value='"+escape(value)+"'>"; }
     private String csrf(HttpServletRequest request) { var token=(CsrfToken)request.getAttribute(CsrfToken.class.getName()); return input(token.getParameterName(),token.getToken()); }
     private ResponseEntity<String> page(String title,String content) {
-        return page(title, content, "");
+        return htmlResponse(OAuthBrowserPaths.html(legacyPage(title, content)), "");
     }
-    private ResponseEntity<String> page(String title,String content,String callbackSources) {
+    private ResponseEntity<String> htmlResponse(String html, String callbackSources) {
         return ResponseEntity.ok().contentType(new MediaType("text","html",java.nio.charset.StandardCharsets.UTF_8)).cacheControl(CacheControl.noStore())
             .header("Content-Security-Policy","default-src 'none'; style-src 'unsafe-inline'; form-action 'self'"+callbackSources+"; frame-ancestors 'none'; base-uri 'none'")
-            .body(OAuthBrowserPaths.html("<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+escape(title)+"</title><style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:16px;color:#243346}section{padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:8px}button{cursor:pointer}code{overflow-wrap:anywhere}a{color:#2563ab}</style><h1>"+escape(title)+"</h1><nav><a href='/oauth/apps'>我的应用</a> · <a href='/oauth/connections'>已授权应用</a></nav>"+content+"</html>"));
+            .body(html);
+    }
+
+    private String legacyPage(String title, String content) {
+        return "<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+escape(title)+"</title><style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:16px;color:#243346}section{padding:20px;border:1px solid #ddd;border-radius:12px;margin:16px 0}label{display:block;margin:12px 0}input,select,button{font:inherit;padding:8px}button{cursor:pointer}code{overflow-wrap:anywhere}a{color:#2563ab}</style><h1>"+escape(title)+"</h1><nav><a href='/oauth/apps'>我的应用</a> · <a href='/oauth/connections'>已授权应用</a></nav>"+content+"</html>";
     }
     @GetMapping("/apps")
     public ResponseEntity<String> applications(Principal user,HttpServletRequest request) {
@@ -82,14 +86,60 @@ public class OAuthPages {
         if(!client.getScopes().containsAll(requested)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         var catalog=properties.catalog(apps.applicationId(clientId));
         var prior=consents.findById(client.getId(),user.getName());
-        StringBuilder html=new StringBuilder("<section><h2>").append(escape(client.getClientName())).append(" 请求访问你的账号</h2><p>请选择允许的功能。应用仍受你的数据访问权限限制。</p><form method='post' action='/oauth2/authorize'>")
-            .append(csrf(request)).append(input("client_id",clientId)).append(input("state",state));
-        for(String s:requested) {
-            if(!catalog.containsKey(s)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
-            boolean approved=prior!=null && prior.getScopes().contains(s);
-            html.append("<label><input type='checkbox' name='scope' value='").append(escape(s)).append("' ").append(approved?"checked disabled":"").append("> ").append(escape(catalog.get(s))).append(approved?"（此前已授权，可在已授权应用中撤销）":"").append("</label>");
+        String formFields = csrf(request) + input("client_id", clientId) + input("state", state);
+        StringBuilder permissions = new StringBuilder();
+        for (String requestedScope : requested) {
+            if (!catalog.containsKey(requestedScope)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
+            boolean approved = prior != null && prior.getScopes().contains(requestedScope);
+            permissions.append("<label class='permission'><input type='checkbox' name='scope' value='")
+                .append(escape(requestedScope)).append("' ").append(approved ? "checked disabled" : "")
+                .append("><span>").append(escape(catalog.get(requestedScope)));
+            if (approved) permissions.append("<small>此前已授权，可在已授权应用中撤销</small>");
+            permissions.append("</span></label>");
         }
-        html.append("<button>同意所选功能</button></form><form method='post' action='/oauth2/authorize'>").append(csrf(request)).append(input("client_id",clientId)).append(input("state",state)).append("<button>拒绝</button></form></section>");
-        return page("授权确认",html.toString(),OAuthBrowserPaths.formCallbackSources(client.getRedirectUris()));
+
+        String html = """
+            <!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>
+            <meta name='viewport' content='width=device-width,initial-scale=1'>
+            <title>授权确认 · Alisa</title><style>
+            """ + OAuthAccountPage.STYLES + """
+            main{max-width:480px}
+            .intro{color:#657189;margin-bottom:22px}
+            .app-name{overflow-wrap:anywhere}
+            fieldset{min-width:0;margin:0;padding:0;border:0}
+            legend{padding:0;margin-bottom:10px;color:#46546d;font-size:13px;font-weight:600}
+            .permission{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px;padding:12px;
+                background:#f5f7fc;border:1px solid #e9edf3;border-radius:9px;cursor:pointer;overflow-wrap:anywhere}
+            .permission:hover{border-color:#a8b6ff}
+            .permission input{width:17px;height:17px;flex:none;margin:1px 0 0;accent-color:#5267e8}
+            .permission small{display:block;margin-top:4px;color:#657189;font-size:12px}
+            .actions{display:flex;gap:10px;margin-top:16px}
+            button{min-height:44px;padding:10px 16px;border:1px solid #dde3ee;border-radius:9px;
+                background:white;color:#46546d;font:inherit;font-weight:600;cursor:pointer}
+            button:hover{background:#f5f7fc}
+            .primary{flex:1;border-color:#5267e8;background:#5267e8;color:white}
+            .primary:hover{background:#445ad7}
+            :focus-visible{outline:3px solid #8899ed;outline-offset:3px}
+            .foot{display:flex;justify-content:center;gap:16px;border-top:1px solid #e9edf3;padding-top:16px;margin-top:22px;text-align:center}
+            .foot a{color:#445ad7;text-underline-offset:3px}
+            </style></head><body><main>
+            """ + OAuthAccountPage.BRAND + """
+            <p class='eyebrow'>ALISA ACCOUNT</p>
+            <h1>授权确认</h1>
+            <p class='intro'><strong class='app-name'>%s</strong> 请求访问你的 Alisa 账号。
+            应用只能访问你有权限的数据。</p>
+            <form id='approve' method='post' action='/oauth2/authorize'>
+              %s
+              <fieldset><legend>选择允许的功能</legend>%s</fieldset>
+            </form>
+            <form id='deny' method='post' action='/oauth2/authorize'>%s</form>
+            <div class='actions'>
+              <button type='submit' form='deny'>拒绝</button>
+              <button class='primary' type='submit' form='approve'>同意所选功能</button>
+            </div>
+            <nav class='foot' aria-label='应用管理'><a href='/oauth/apps'>我的应用</a><a href='/oauth/connections'>已授权应用</a></nav>
+            </main></body></html>
+            """.formatted(escape(client.getClientName()), formFields, permissions, formFields);
+        return htmlResponse(OAuthBrowserPaths.html(html), OAuthBrowserPaths.formCallbackSources(client.getRedirectUris()));
     }
 }
